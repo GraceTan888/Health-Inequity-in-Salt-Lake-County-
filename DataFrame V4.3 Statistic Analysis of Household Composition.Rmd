@@ -1,0 +1,589 @@
+---
+title: "DataFrame V4.3 Statistic Analysis of Household Composition"
+date: "04/03/2022"
+output:
+  pdf_document: default
+  word_document: default
+  html_document: default
+fontsize: 12pt
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R Markdown
+
+```{r}
+library(readxl)
+
+library(tidyverse)
+library(tidycensus)
+library(dplyr)
+library(ggplot2)
+library(knitr)
+library(qqplotr)
+
+library(lattice)
+library(survival)
+library(Formula)
+library(Hmisc)
+
+
+library(Metrics)
+library(lmtest)
+library(fBasics)
+library(segmented)
+
+library(corrplot)
+#library(raster)
+#library(rgdal)
+#library(classInt)
+library(RColorBrewer)
+
+library(oaxaca)
+library(devtools)
+
+library(viridis)#viridisLite provides the base functions for generating the color maps in base R 
+library(GGally)
+
+library(olsrr)
+
+library(relaimpo)
+```
+
+
+## 1. Description of Dataset
+
+```{r}
+
+Dataset_V4<- read_excel("Dataset V4 Socioeconomic Multifactor.xlsx", 
+                         
+    col_types = c("numeric", "numeric", "numeric", 
+        "numeric", "numeric", "numeric", 
+        "numeric", "numeric", "numeric", 
+        "numeric", "numeric", "numeric", 
+        "numeric", "numeric", "numeric", 
+        "numeric", "numeric", "numeric", 
+        "numeric", "numeric", "numeric", 
+        "numeric", "numeric", "numeric", 
+        "numeric", "numeric","numeric",
+        "numeric","numeric","numeric",
+        "numeric"))
+
+Dataset_V4
+#Rows: 210 Columns: 31
+```
+```{r}
+glimpse(Dataset_V4)
+#Rows: 210 Columns: 31
+```
+
+
+```{r}
+df <- data.frame(Group=rep(c("Both Groups",  "Group 0","Group 1"), each=5),
+                dose=rep(c("Female_Uninsured_Percent",  "AGE_Under_19_Uninsured_Percent","AGE_Above_65_Uninsured_Percent","In_family_households_Uninsured_Percent","In_family_households_married_Uninsured_Percent"),3),
+                Uninsured_Percent=c(9.687,7.914,1.657,10.343,8.889,6.846,5.188,1.175,7.088,5.583,21.048,18.817,3.583,23.364,22.11))
+head(df)
+```
+
+```{r}
+png("barplot_Household1.png", width = 220, height = 190, units='mm', res = 300)
+  plot(1:10, 1:10, mar=c(3.5,0,3,0))
+  
+  df<-df %>%
+  mutate(Category = fct_reorder(dose, Uninsured_Percent)) 
+   
+ ggplot2::ggplot(data=df, aes(x=Category, y=Uninsured_Percent, fill=Group)) +
+  geom_bar(stat="identity", position=position_dodge())+
+  geom_text(aes(label=Uninsured_Percent), vjust=1.6, color="black",
+            position = position_dodge(0.9), size=3.5)+
+  scale_fill_brewer(palette="Paired")+
+    coord_flip() +
+    ggtitle("The Means of Uninsured Percent \n in Household Composition 1 \n (Less than Average Uninsured Percents by Tracts)") + 
+  theme_minimal()
+
+
+dev.off()
+```
+
+```{r}
+df2 <- data.frame(Group=rep(c("Both Groups",  "Group 0","Group 1"), each=4),
+                dose=rep(c("Male_Uninsured_Percent","AGE_19_to_64_Uninsured_Percent","In_family_households_other_Uninsured_Percent","In_NonFamily_households_Uninsured_Percent"),3),
+                Uninsured_Percent=c(11.174,13.041,15.35,10.444,7.729,9.35,12.743,8.126,24.957,27.807,25.779,19.719))
+head(df2)
+```
+
+```{r}
+png("barplot_Household2.png", width = 220, height = 190, units='mm', res = 300)
+  plot(1:10, 1:10, mar=c(3.5,0,3,0))
+  
+  df2<-df2 %>%
+  mutate(Category = fct_reorder(dose, Uninsured_Percent)) 
+   
+ ggplot2::ggplot(data=df2, aes(x=Category, y=Uninsured_Percent, fill=Group)) +
+  geom_bar(stat="identity", position=position_dodge())+
+  geom_text(aes(label=Uninsured_Percent), vjust=1.6, color="black",
+            position = position_dodge(0.9), size=3.5)+
+  scale_fill_brewer(palette="Paired")+
+    coord_flip() +
+    ggtitle("The Means of Uninsured Percent \n in Household Composition 2 \n (More than Average Uninsured Percents by Tracts)") + 
+  theme_minimal()
+
+
+dev.off()
+```
+
+
+
+
+## 2. Correlation Analysis 
+
+```{r}
+
+cordata<-Dataset_V4%>%
+  dplyr::select(c(
+                  Male_Uninsured_Percent,
+                  Female_Uninsured_Percent,
+                  AGE_Under_19_Uninsured_Percent,
+                  AGE_19_to_64_Uninsured_Percent,                                       AGE_Above_65_Uninsured_Percent,
+                  In_family_households_Uninsured_Percent,                               In_family_households_married_Uninsured_Percent,                       In_family_households_other_Uninsured_Percent,                         In_NonFamily_households_Uninsured_Percent,                                          ))
+cordata
+
+#210*9
+
+```
+
+```{r}
+res <- rcorr(as.matrix(cordata))
+view(res)
+```
+
+Extract the correlation coefficients
+```{r}
+Corr__Coefficients_HouseComp<- res$r
+view(Corr__Coefficients_HouseComp)
+write.csv(Corr__Coefficients_HouseComp, 'Corr__Coefficients_HouseComp.csv', row.names = FALSE)
+```
+
+
+```{r}
+png("Corr__Coefficients_HouseComp.png", width = 220, height = 190, units='mm', res = 300)
+  plot(1:10, 1:10, mar=c(3.5,0,3,0))
+M <- cor(cordata)
+corrplot(M, type = "upper", tl.pos = "td",
+         method = "circle", tl.cex = 0.5, tl.col = 'black',
+         order = "hclust", col=brewer.pal(n=8, name="RdYlBu"),diag = FALSE)
+#ggsave("test.tiff", units="in", width=5, height=4, dpi=300, compression = 'lzw')
+dev.off()
+
+```
+
+```{r}
+highcor_data<-Dataset_V4%>%
+  dplyr::select(c(
+                  Female_Uninsured_Percent,
+                  Male_Uninsured_Percent,
+                  AGE_19_to_64_Uninsured_Percent,
+                  In_family_households_married_Uninsured_Percent,
+                  In_family_households_Uninsured_Percent))
+highcor_data
+```
+```{r}
+highcor_res <- rcorr(as.matrix(highcor_data))
+view(highcor_res)
+```
+
+```{r}
+png("HighCorr_Coefficients_HouseComp.png", width = 220, height = 190, units='mm', res = 300)
+  plot(1:10, 1:10, mar=c(3.5,0,3,0))
+M <- cor(highcor_data)
+corrplot(M, type = "upper", tl.pos = "td",
+         method = "circle", tl.cex = 0.5, tl.col = 'black',
+         order = "hclust", col=brewer.pal(n=8, name="RdYlBu"),diag = FALSE)
+#ggsave("test.tiff", units="in", width=5, height=4, dpi=300, compression = 'lzw')
+dev.off()
+
+```
+
+```{r}
+ggpairs(highcor_data, title="High Correlation Coeffients in Household Composition
+uninsured percent of female
+uninsured percent of male
+uninsured percent of age 19 to 64 years 
+uninsured percent of in family households!!in married couple families
+uninsured percent of in family households") 
+```
+
+## 3. Regression Analysis
+
+### 3.1 Household Composition Status Linear model using original dataset for both groups of rank80
+```{r}
+HouseCompo__lmModel <- lm(Total_Uninsured_Percent~Male_Uninsured_Percent+
+                  Female_Uninsured_Percent+
+                  AGE_Under_19_Uninsured_Percent+
+                  AGE_19_to_64_Uninsured_Percent+                                       AGE_Above_65_Uninsured_Percent+
+                  In_family_households_Uninsured_Percent+                               In_family_households_married_Uninsured_Percent+                       In_family_households_other_Uninsured_Percent+                        In_NonFamily_households_Uninsured_Percent, data=Dataset_V4)
+summary(HouseCompo__lmModel)
+```
+1. F-statistic: p-value: < 2.2e-16. The regression model fits the data better than the model with no independent variables.
+
+
+2. Adjusted R-squared:  0.9803    Goodness-of-fit measure
+
+3. Coefficients p-value. Some of the coefficients has effects on y.
+
+Native_Born_Uninsured_Percent                       < 2e-16 ***
+Foreign_Born_Naturalized_Uninsured_Percent         0.278555    
+Foreign_Born_Not_citizen_Uninsured_Percent         9.05e-07 ***
+Less_than_high_school_graduate_Uninsured_Percent   0.721951    
+High_school_graduate_Uninsured_Percent             0.183917    
+Some_college_or_associate_degree_Uninsured_Percent 0.334808    
+Bachelor_or_higher_Uninsured_Percent               0.000211 ***
+Worked_Full_time_Uninsured_Percent                  < 2e-16 ***
+Worked_less_FullTime_Uninsured_Percent             1.41e-13 ***
+Did_not_work_Uninsured_Percent                     9.29e-10 ***
+Below_138_poverty_Uninsured_Percent                0.026713 *  
+From_138_to_399_poverty_Uninsured_Percent          0.131969    
+At_or_above_400_Poverty_Uninsured_Percent          0.833373  
+---
+Signif. codes:  0 ‘***’ 0.001 ‘**’ 0.01 ‘*’ 0.05 ‘.’ 0.1 ‘ ’ 1  
+
+
+```{r}
+step(HouseCompo__lmModel)
+```
+
+```{r}
+HouseCompo__lmModel_step <- lm(Total_Uninsured_Percent~Male_Uninsured_Percent+
+                  Female_Uninsured_Percent+
+                  AGE_19_to_64_Uninsured_Percent+                   
+                  In_family_households_Uninsured_Percent+                               In_family_households_married_Uninsured_Percent+                                    In_NonFamily_households_Uninsured_Percent, data=Dataset_V4)
+summary(HouseCompo__lmModel_step)
+```
+
+```{r}
+cordata_step<-Dataset_V4%>%
+  dplyr::select(c(
+                  Male_Uninsured_Percent,
+    Female_Uninsured_Percent,
+    AGE_19_to_64_Uninsured_Percent, 
+    In_family_households_Uninsured_Percent, In_family_households_married_Uninsured_Percent,
+    In_NonFamily_households_Uninsured_Percent))
+cordata_step
+#210*6
+```
+```{r}
+cordata_step_res <- rcorr(as.matrix(cordata_step))
+view(cordata_step_res)
+```
+Extract the correlation coefficients
+```{r}
+Corr__Coefficients_step_HouseComp<- cordata_step_res$r
+view(Corr__Coefficients_step_HouseComp)
+write.csv(Corr__Coefficients_step_HouseComp, 'Corr__Coefficients_step_HouseComp.csv', row.names = FALSE)
+```
+
+```{r}
+ggpairs(cordata_step)
+```
+
+```{r}
+metrics <- calc.relimp(HouseCompo__lmModel_step, type = c("lmg"), rela= TRUE)
+metrics
+```
+
+```{r}
+Dataset_V4<-Dataset_V4%>%
+  dplyr::mutate(Age19To64_Sex_InFamilyHousehold_married_multifactor = 0.206122133141444* Male_Uninsured_Percent+ 0.198604704842472* Female_Uninsured_Percent+ 0.206520900534501* AGE_19_to_64_Uninsured_Percent+ 0.209901338644225* In_family_households_Uninsured_Percent+ 0.178850922837356* In_family_households_married_Uninsured_Percent)
+Dataset_V4 <-Dataset_V4 %>% relocate(Age19To64_Sex_InFamilyHousehold_married_multifactor, .after = NativeBorn_WorkedFulltime_From138to399poverty_MultiFactor)
+write.csv(Dataset_V4, 'Dataset V4 Socioeconomic HouseCompo Multifactor.csv', row.names = FALSE)
+Dataset_V4
+```
+
+
+```{r}
+cordata_multifactor<-Dataset_V4%>%
+  dplyr::select(c(
+                  Age19To64_Sex_InFamilyHousehold_married_multifactor,
+                  
+                  In_NonFamily_households_Uninsured_Percent))
+cordata_multifactor
+#210*2
+```
+
+```{r}
+MultiFactor_res <- rcorr(as.matrix(cordata_multifactor))
+view(MultiFactor_res)
+```
+
+Extract the correlation coefficients
+```{r}
+Corr__Coefficients_HouseCompo_MultiFactor<- MultiFactor_res$r
+view(Corr__Coefficients_HouseCompo_MultiFactor)
+write.csv(Corr__Coefficients_HouseCompo_MultiFactor, 'Corr__Coefficients_HouseCompo_MultiFactor.csv', row.names = FALSE)
+```
+
+
+```{r}
+ggpairs(cordata_multifactor)
+```
+
+```{r}
+HouseCompo_Multifactor__lmModel <- lm(Total_Uninsured_Percent~Age19To64_Sex_InFamilyHousehold_married_multifactor+In_NonFamily_households_Uninsured_Percent, data=Dataset_V4)
+summary(HouseCompo_Multifactor__lmModel)
+```
+```{r}
+bptest(HouseCompo_Multifactor__lmModel)
+```
+
+Box-Cox Transformation
+```{r}
+bc=boxcox(HouseCompo_Multifactor__lmModel)
+#extract best lambda
+best.lam=bc$x[which(bc$y==max(bc$y))]
+best.lam
+```
+Best lambda=0.989899
+We will transform Y with best lambda
+"Linear Model With R" p134
+```{r}
+Dataset_V4<-Dataset_V4%>%
+  dplyr::mutate(bestLambda_Household_Total_Uninsured_Percent = (Total_Uninsured_Percent^0.989899-1)/0.989899)
+Dataset_V4 <-Dataset_V4 %>% relocate(bestLambda_Household_Total_Uninsured_Percent, .after = Total_Uninsured_Percent)
+Dataset_V4
+write.csv(Dataset_V4, 'Dataset_V4_BestLambda_household.csv', row.names = FALSE)
+
+```
+
+### 3.2 Household Composition Status Linear model after using step(), lmg, and Box-Cox Transformation in both groups of rank80, group 0, and group 1
+
+
+```{r}
+HouseCompo_Multifactor__lmModel_update <- lm(bestLambda_Household_Total_Uninsured_Percent~Age19To64_Sex_InFamilyHousehold_married_multifactor+In_NonFamily_households_Uninsured_Percent, data=Dataset_V4)
+summary(HouseCompo_Multifactor__lmModel_update)
+```
+
+
+```{r}
+group0_data<-Dataset_V4%>%
+  dplyr::filter(rank80 ==0) 
+group0_data
+
+```
+
+```{r}
+HouseCompo0_Multifactor__lmModel_update <- lm(bestLambda_Household_Total_Uninsured_Percent~Age19To64_Sex_InFamilyHousehold_married_multifactor+In_NonFamily_households_Uninsured_Percent,data=group0_data)
+summary(HouseCompo0_Multifactor__lmModel_update)
+```
+
+
+```{r}
+group1_data<-Dataset_V4%>%
+  dplyr::filter(rank80 ==1) 
+group1_data
+```
+
+
+```{r}
+HouseCompo1_Multifactor__lmModel_update <- lm(bestLambda_Household_Total_Uninsured_Percent~Age19To64_Sex_InFamilyHousehold_married_multifactor+In_NonFamily_households_Uninsured_Percent,data=group1_data)
+summary(HouseCompo1_Multifactor__lmModel_update)
+```
+
+### 3.3 Regression diagnosis 
+
+a. Residuals are normally distributed.
+
+b. Residuals are independent.
+
+c. The mean of the residuals is zero and sum of the residuals is zero.
+
+d. Residuals has constant variance.
+
+
+```{r}
+jarqueberaTest(HouseCompo_Multifactor__lmModel_update$resid)
+```
+Null Hypothesis: Skewness and Kurtosis are equal to zero(normal distribution).  p <= 0.01  : very strong presumption against null hypothesis. It is not normally distributed
+
+```{r}
+plot(HouseCompo_Multifactor__lmModel_update)
+```
+```{r}
+ols_plot_resid_hist(HouseCompo_Multifactor__lmModel_update)
+```
+HouseCompo_Multifactor2__lmModel uses a large sample (size 210 which are bigger than 30), and the histogram of residuals is similar to normal distribution. According to Law of Large Numbers and Central Limit Theorem, we can accept the normality of residuals although the residuals are not normally distributed using Jarque - Bera Normalality Test.
+
+
+```{r}
+jarqueberaTest(HouseCompo0_Multifactor__lmModel_update$resid)
+```
+Null Hypothesis: Skewness and Kurtosis are equal to zero(normal distribution).  p <= 0.01  : very strong presumption against null hypothesis. It is not normally distributed
+
+```{r}
+ols_plot_resid_hist(HouseCompo0_Multifactor__lmModel_update)
+```
+HouseCompo0__lmModel uses a large sample (size 168 which are bigger than 30), and the histogram of residuals is similar to normal distribution. According to Law of Large Numbers and Central Limit Theorem, we can accept the normality of residuals although the residuals are not normally distributed using Jarque - Bera Normalality Test.
+
+```{r}
+jarqueberaTest(HouseCompo1_Multifactor__lmModel_update$resid)
+```
+Null Hypothesis: Skewness and Kurtosis are equal to zero(normal distribution).  p > 0.01  : very strong presumption against null hypothesis. It is normally distributed
+
+
+```{r}
+ols_test_normality(HouseCompo1_Multifactor__lmModel_update)
+```
+Kolmogorov-Smirnov p >0.05. Residuals of HouseCompo1__lmModel are normally distributed.
+
+Residual Diagnostics
+https://cran.r-project.org/web/packages/olsrr/vignettes/residual_diagnostics.html
+
+
+b. Check if residuals are independent.
+```{r}
+dwtest(HouseCompo_Multifactor__lmModel_update)
+```
+
+The Durbin Watson statistic tests the hypothesis that there is no autocorrelation. If there is no autocorrelation (where subsequent observations are related), the Durbin-Watson statistic should be between 1.5 and 2.5 and the p-value will be above 0.05.
+DW = 2.1905 (1.5<2.1905<2.5), p-value = 0.9117(0.9117>0.05). 
+
+```{r}
+dwtest(HouseCompo0_Multifactor__lmModel_update)
+```
+Residuals of Socioeconomic0__lmModel__update are independent.
+The Durbin Watson statistic tests the hypothesis that there is no autocorrelation. If there is no autocorrelation (where subsequent observations are related), the Durbin-Watson statistic should be between 1.5 and 2.5 and the p-value will be above 0.05.
+DW = 2.0509 (1.5<2.0547<2.5), p-value =  0.6247(0.634>0.05). 
+
+```{r}
+dwtest(HouseCompo1_Multifactor__lmModel_update)
+```
+
+The Durbin Watson statistic tests the hypothesis that there is no autocorrelation. If there is no autocorrelation (where subsequent observations are related), the Durbin-Watson statistic should be between 1.5 and 2.5 and the p-value will be above 0.05.
+DW = 1.6921 (1.5<1.6921<2.5), p-value =  0.1347(0.1347>0.05). 
+
+c. The mean of the residuals is zero and sum of the residuals is zero.
+
+```{r}
+sum(HouseCompo_Multifactor__lmModel_update$residuals)
+```
+```{r}
+mean(HouseCompo_Multifactor__lmModel_update$residuals)
+```
+The mean of the erros is zero and sum of the errors close to zero.
+
+```{r}
+sum(HouseCompo0_Multifactor__lmModel_update$residuals)
+```
+```{r}
+mean(HouseCompo0_Multifactor__lmModel_update$residuals)
+```
+```{r}
+sum(HouseCompo1_Multifactor__lmModel_update$residuals)
+```
+
+```{r}
+mean(HouseCompo1_Multifactor__lmModel_update$residuals)
+```
+
+
+d.Check if residuals has constant variance.
+
+https://www.statology.org/goldfeld-quandt-test-in-r/
+```{r}
+bptest(HouseCompo_Multifactor__lmModel_update)
+```
+```{r}
+bptest(HouseCompo0_Multifactor__lmModel_update)
+```
+
+```{r}
+bptest(HouseCompo1_Multifactor__lmModel_update)
+```
+
+
+
+## 4. Oaxaca decomposition 
+```{r}
+oaxaca_HouseCompo_results <- oaxaca(formula = bestLambda_Household_Total_Uninsured_Percent ~Age19To64_Sex_InFamilyHousehold_married_multifactor+In_NonFamily_households_Uninsured_Percent|rank80, data = Dataset_V4)
+names(summary(oaxaca_HouseCompo_results))
+summary(oaxaca_HouseCompo_results)
+
+```
+```{r}
+oaxaca_HouseCompo_results$n
+```
+```{r}
+oaxaca_HouseCompo_results$y
+```
+
+
+
+### 4.1 Threefold decomposition
+```{r}
+oaxaca_HouseCompo_results$threefold$overall
+```
+```{r}
+plot(oaxaca_HouseCompo_results, components = c("endowments","coefficients")) +
+  labs(
+    title = "Household Composition Status Oaxaca Decomposition "
+    )
+```
+```{r}
+oaxaca_HouseCompo_results$beta$beta.diff["Age19To64_Sex_InFamilyHousehold_married_multifactor"]
+```
+
+
+
+### 4.2 Twofold decomposition
+```{r}
+oaxaca_HouseCompo_results$twofold$overall
+```
+
+```{r}
+plot(oaxaca_HouseCompo_results, decomposition = "twofold", group.weight = -1)
+```
+```{r}
+plot(oaxaca_HouseCompo_results, decomposition = "twofold", group.weight = -1,
+unexplained.split = TRUE, components = c("unexplained A",
+"unexplained B"), component.labels = c("unexplained A" =
+"In Favor of Safe Group", "unexplained B" = "Against the Risk Group"),
+variables = c(
+  "Age19To64_Sex_InFamilyHousehold_married_multifactor","In_NonFamily_households_Uninsured_Percent"), variable.labels = c(
+  "Age19To64_Sex_InFamilyHousehold_married_multifactor"="Multifactor2 of Age19To64 Sex InFamilyHousehold(married)",
+ 
+  "In_NonFamily_households_Uninsured_Percent"="Uninsured percent of In-Nonfamily households"))
+```
+
+```{r}
+plot(oaxaca_HouseCompo_results, decomposition = "twofold", group.weight = -1,
+unexplained.split = TRUE, components = c("unexplained A",
+"unexplained B"), component.labels = c("unexplained A" =
+ "In Favor of Safe Group", "unexplained B" = "Against the Risk Group"),
+component.left = TRUE, variables = c( "Age19To64_Sex_InFamilyHousehold_married_multifactor","In_NonFamily_households_Uninsured_Percent"),
+variable.labels = c( "Age19To64_Sex_InFamilyHousehold_married_multifactor"="Multifactor2 of Age19To64 Sex InFamilyHousehold(married)",
+ 
+  "In_NonFamily_households_Uninsured_Percent"="Uninsured percent of In-Nonfamily households"))
+```
+
+```{r}
+variables <- c(
+ "Age19To64_Sex_InFamilyHousehold_married_multifactor","In_NonFamily_households_Uninsured_Percent")
+```
+
+```{r}
+columns <- c("group.weight", "coef(unexplained A)", "coef(unexplained B)")
+```
+
+```{r}
+view(oaxaca_HouseCompo_results$twofold$variables[[5]][variables, columns])
+```
+
+
+
+
+
+
+
+
+

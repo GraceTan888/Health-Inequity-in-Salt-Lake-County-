@@ -1,0 +1,3189 @@
+---
+title: "Dataframe Version 4"
+date: "02/22/2022"
+output:
+  pdf_document: default
+  word_document: default
+  html_document: default
+fontsize: 12pt
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R Markdown
+
+
+
+```{r}
+library(readxl)
+
+library(tidyverse)
+library(tidycensus)
+library(dplyr)
+library(ggplot2)
+library(knitr)
+library(qqplotr)
+
+library(lattice)
+library(survival)
+library(Formula)
+library(Hmisc)
+
+
+library(Metrics)
+library(lmtest)
+library(fBasics)
+library(segmented)
+
+library(corrplot)
+#library(raster)
+#library(rgdal)
+#library(classInt)
+library(RColorBrewer)
+
+library(oaxaca)
+library(devtools)
+
+library(viridis)#viridisLite provides the base functions for generating the color maps in base R 
+
+library(ggpubr)
+```
+
+
+## 1. Descriptive Statistics 
+
+### 1.0 import dataset
+
+```{r}
+
+Dataset_V3 <- read_excel("Dataset_V3.xlsx", 
+                         
+    col_types = c("numeric", "numeric", "numeric", 
+        "numeric", "numeric", "numeric", 
+        "numeric", "numeric", "numeric", 
+        "numeric", "numeric", "numeric", 
+        "numeric", "numeric", "numeric", 
+        "numeric", "numeric", "numeric", 
+        "numeric", "numeric", "numeric", 
+        "numeric", "numeric", "numeric", 
+        "numeric", "numeric"))
+
+Dataset_V3
+#Rows: 210 Columns: 26
+```
+```{r}
+glimpse(Dataset_V3)
+#Rows: 210 Columns: 26
+```
+
+
+### 1.1 Uninsured Percent by Tracts
+
+```{r}
+summary(Dataset_V3$Total_Uninsured_Percent)
+```
+There is no missing values in Total_Uninsured_Percent.
+
+
+Use histogram to See the frequency of the Total_Uninsured_Percent
+
+```{r}
+ggplot(Dataset_V3%>% dplyr::filter(!is.na(Total_Uninsured_Percent)),
+       aes(x=Total_Uninsured_Percent))+
+  geom_histogram(fill="light blue",color='black',bins=10)+
+  xlab("Total_Uninsured_Percent")+
+  ylab("Count")
+#geom_histogram() ) display the counts with bars
+# 10 bins
+```
+
+
+
+```{r}
+quantile(Dataset_V3$Total_Uninsured_Percent,probs = seq(0, 1, .1))
+```
+
+We have 15.86 at the 80th percentile. Let Total_Uninsured_Percent >15.86 as the risky group (group 1).Total_Uninsured_Percent <15.86 as the safe group (group 0).
+
+Create a column with indicate uninsured percent >15.86 with index 1 and uninsured percent <=15.86 with index 0
+
+```{r}
+Dataset_V3<-Dataset_V3%>%
+  dplyr::mutate(rank80 = ifelse(Total_Uninsured_Percent > 15.86, "1", "0"))
+Dataset_V3 <-Dataset_V3 %>% relocate(rank80, .after = Total_Uninsured_Percent)
+Dataset_V3
+
+#210*27
+```
+
+Remove the column "rank" because we have new rank80.
+```{r}
+Dataset_V3 <- Dataset_V3 %>%
+  dplyr::select(-rank)
+Dataset_V3
+#210*26
+```
+
+
+Use boxplot to show the distribution of the Uninsured_Percent from the perspectives group 1 and group 0
+
+```{r}
+ggplot(Dataset_V3,aes(x=rank80,y=Total_Uninsured_Percent, fill=rank80))+
+  stat_boxplot(geom="errorbar")+
+  geom_boxplot(fill="light blue")+
+  ggtitle("Boxplot of Uninsured_Percent")+
+  theme_bw()
+
+```
+```{r}
+Dataset_V3%>%
+  
+  summarise(
+    n=n(),
+    mean=mean(Total_Uninsured_Percent,na.rm=TRUE),
+    standard_deviation=sd(Total_Uninsured_Percent,na.rm=TRUE),
+    median=median(Total_Uninsured_Percent,na.rm=TRUE),
+    quartRange=IQR(Total_Uninsured_Percent,na.rm=TRUE),
+    min=min(Total_Uninsured_Percent,na.rm=TRUE),
+    max=max(Total_Uninsured_Percent,na.rm=TRUE)
+)%>%
+kable(align = "ccccccccccc",caption = "Uninsured Percent by Tracts Total Summary ")
+```
+
+```{r}
+Dataset_V3%>%
+  group_by(rank80)%>%
+  summarise(
+    n=n(),
+    mean=mean(Total_Uninsured_Percent,na.rm=TRUE),
+    standard_deviation=sd(Total_Uninsured_Percent,na.rm=TRUE),
+    median=median(Total_Uninsured_Percent,na.rm=TRUE),
+    quartRange=IQR(Total_Uninsured_Percent,na.rm=TRUE),
+    min=min(Total_Uninsured_Percent,na.rm=TRUE),
+    max=max(Total_Uninsured_Percent,na.rm=TRUE)
+)%>%
+kable(align = "ccccccccccc",caption = "Uninsured Percent by rank80 Summary ")
+```
+Extract the values of the potential outliers
+
+```{r}
+boxplot.stats(Dataset_V3$Total_Uninsured_Percent)$out
+```
+There are 10 outliers in the risk group.
+
+```{r}
+png("Total Uninsured Percent scatter plot.png", width = 220, height = 190, units='mm', res = 300)
+  plot(1:10, 1:10, mar=c(3.5,0,3,0))
+p1<-ggplot(data=Dataset_V3%>% dplyr::filter(!is.na(Total_Uninsured_Percent)), mapping = aes(sample = Total_Uninsured_Percent)) +
+  stat_qq_band(alpha=0.5,conf=0.95,qtype = 1,bandType ="boot" ) +
+  stat_qq_line(identity = TRUE) +
+  stat_qq_point(col="Orange") +
+  ggtitle("Uninsured Percent by Tracts \n in Both Groups")
+  labs(x = "Theoretical Quantiles", y = "Sample Quantitles")+theme_bw()
+
+
+p2<-ggplot(data=Dataset_V3%>% dplyr::filter(!is.na(Total_Uninsured_Percent)), mapping = aes(sample = Total_Uninsured_Percent,color=rank80,fill=rank80)) +
+  stat_qq_band(alpha=0.5,conf=0.95,qtype = 1,bandType ="boot" ) +
+  stat_qq_line(identity = TRUE) +
+  stat_qq_point(col="black") +
+  facet_wrap(~rank80,scales="free")+
+  ggtitle("Uninsured Percent by Tracts \n in Group 0 and Group 1")+
+  labs(x = "Theoretical Quantiles", y = "Sample Quantitles")+theme_bw()
+
+ggarrange(p1, p2, 
+          labels = c("A", "B"),
+          ncol = 2, nrow = 1)
+dev.off()
+```
+
+
+```{r}
+ggplot(data=Dataset_V3%>% dplyr::filter(!is.na(Total_Uninsured_Percent)), mapping = aes(sample = Total_Uninsured_Percent,color=rank80,fill=rank80)) +
+  stat_qq_band(alpha=0.5,conf=0.95,qtype = 1,bandType ="boot" ) +
+  stat_qq_line(identity = TRUE) +
+  stat_qq_point(col="black") +
+  facet_wrap(~rank80,scales="free")+
+  labs(x = "Theoretical Quantiles", y = "Sample Quantitles")+theme_bw()
+
+```
+
+As we can see, most of the points lie within the confidence bands, which is expected for the given distribution.
+
+
+#### SVI shape file
+
+Only SVI has shape file.
+```{r}
+svi2018 <- sf::read_sf("SVI/SVI2018_UTAH_tract.shp")
+svi2018
+#call the library sf directly using sf colon colon
+#read_sf() read simple feature
+# What we've got is like a dataframe. 
+```
+
+
+```{r}
+svi2018 %>%
+  ggplot() +
+  geom_sf()
+#get the simple feature
+```
+
+```{r}
+svi2018 %>%
+  dplyr::filter(COUNTY=="Salt Lake") %>%
+  ggplot() +
+  geom_sf()
+
+```
+```{r}
+svi2018 %>%
+  dplyr::filter(COUNTY=="Salt Lake") %>%
+  ggplot(mapping=aes(fill=EP_UNINSUR)) +
+  geom_sf()+
+  scale_fill_viridis_c()+
+  theme_void()
+#ggplot() initializes a ggplot object. It can be used to declare the input data frame for a graphic and to specify the set of plot aesthetics intended to be common throughout all subsequent layers unless specifically overridden.
+#ggplot(data = NULL, mapping = aes(), ..., environment = parent.frame())
+
+#theme_void() get rid of the latitude and longitude.
+
+#Two tracts are -999. This is not right.
+```
+```{r}
+svi2018 %>%
+  dplyr::filter(COUNTY=="Salt Lake") %>%
+  mutate(ep.uninsur=ifelse(EP_UNINSUR<0, NA, EP_UNINSUR)) %>%
+  ggplot(mapping=aes(fill=ep.uninsur)) +
+  geom_sf()+
+  scale_fill_viridis_c()+
+  theme_void()
+#Convert values to NA Usage
+#In R programming, the mutate function is used to create a new variable from a data set.
+```
+
+### 1.2 AGE Under 19 Uninsured Percent 
+
+```{r}
+summary(Dataset_V3$AGE_Under_19_Uninsured_Percent)
+```
+There are no missing values in AGE_Under_19_Uninsured_Percent.
+
+Use histogram to See the frequency of the AGE_Under_19_Uninsured_Percent
+
+```{r}
+ggplot(Dataset_V3%>% dplyr::filter(!is.na(AGE_Under_19_Uninsured_Percent)),
+       aes(x=AGE_Under_19_Uninsured_Percent))+
+  geom_histogram(fill="light blue",color='black',bins=10)+
+  xlab("AGE_Under_19_Uninsured_Percent")+
+  ylab("Count")
+#geom_histogram() ) display the counts with bars
+# 10 bins
+```
+
+Use boxplot to show the distribution of the AGE_Under_19_Uninsured_Percent from the perspectives group 1 and group 0
+
+```{r}
+ggplot(Dataset_V3%>% dplyr::filter(!is.na(AGE_Under_19_Uninsured_Percent)),aes(x=rank80,y=AGE_Under_19_Uninsured_Percent, fill=rank80))+
+  stat_boxplot(geom="errorbar")+
+  geom_boxplot(fill="light blue")+
+  ggtitle("Boxplot of AGE Under 19 Uninsured Percent")+
+  theme_bw()
+
+```
+
+```{r}
+Dataset_V3%>%
+  
+  summarise(
+    n=n(),
+    mean=mean(AGE_Under_19_Uninsured_Percent,na.rm=TRUE),
+    standard_deviation=sd(AGE_Under_19_Uninsured_Percent,na.rm=TRUE),
+    median=median(AGE_Under_19_Uninsured_Percent,na.rm=TRUE),
+    quartRange=IQR(AGE_Under_19_Uninsured_Percent,na.rm=TRUE),
+    min=min(AGE_Under_19_Uninsured_Percent,na.rm=TRUE),
+    max=max(AGE_Under_19_Uninsured_Percent,na.rm=TRUE)
+)%>%
+kable(align = "ccccccccccc",caption = "AGE Under 19 Uninsured Percent Total Summary ")
+```
+
+```{r}
+Dataset_V3%>%
+  group_by(rank80)%>%
+  summarise(
+    n=n(),
+    mean=mean(AGE_Under_19_Uninsured_Percent,na.rm=TRUE),
+    standard_deviation=sd(AGE_Under_19_Uninsured_Percent,na.rm=TRUE),
+    median=median(AGE_Under_19_Uninsured_Percent,na.rm=TRUE),
+    quartRange=IQR(AGE_Under_19_Uninsured_Percent,na.rm=TRUE),
+    min=min(AGE_Under_19_Uninsured_Percent,na.rm=TRUE),
+    max=max(AGE_Under_19_Uninsured_Percent,na.rm=TRUE)
+)%>%
+kable(align = "ccccccccccc",caption = "AGE Under 19 Uninsured Percent Summary ")
+```
+
+Extract the values of the potential outliers
+
+```{r}
+boxplot.stats(Dataset_V3$AGE_Under_19_Uninsured_Percent)$out
+```
+There are three outliers in the risk group.
+
+```{r}
+png("AGE_Under_19_Uninsured_Percent scatter plot.png", width = 220, height = 190, units='mm', res = 300)
+  plot(1:10, 1:10, mar=c(3.5,0,3,0))
+p1<-ggplot(data=Dataset_V3%>% dplyr::filter(!is.na(AGE_Under_19_Uninsured_Percent)), mapping = aes(sample = AGE_Under_19_Uninsured_Percent)) +
+  stat_qq_band(alpha=0.5,conf=0.95,qtype = 1,bandType ="boot" ) +
+  stat_qq_line(identity = TRUE) +
+  stat_qq_point(col="Orange") +
+  ggtitle("Uninsured Percent of AGE Under 19 \n in Both Groups")
+  labs(x = "Theoretical Quantiles", y = "Sample Quantitles")+theme_bw()
+
+
+p2<-ggplot(data=Dataset_V3%>% dplyr::filter(!is.na(AGE_Under_19_Uninsured_Percent)), mapping = aes(sample = AGE_Under_19_Uninsured_Percent,color=rank80,fill=rank80)) +
+  stat_qq_band(alpha=0.5,conf=0.95,qtype = 1,bandType ="boot" ) +
+  stat_qq_line(identity = TRUE) +
+  stat_qq_point(col="black") +
+  facet_wrap(~rank80,scales="free")+
+  ggtitle("Uninsured Percent of AGE Under 19 \n in Group 0 and Group 1")+
+  labs(x = "Theoretical Quantiles", y = "Sample Quantitles")+theme_bw()
+
+ggarrange(p1, p2, 
+          labels = c("A", "B"),
+          ncol = 2, nrow = 1)
+dev.off()
+```
+
+
+```{r}
+ggplot(data=Dataset_V3%>% dplyr::filter(!is.na(AGE_Under_19_Uninsured_Percent)), mapping = aes(sample = AGE_Under_19_Uninsured_Percent,color=rank80,fill=rank80)) +
+  stat_qq_band(alpha=0.5,conf=0.95,qtype = 1,bandType ="boot" ) +
+  stat_qq_line(identity = TRUE) +
+  stat_qq_point(col="black") +
+  facet_wrap(~rank80,scales="free")+
+  labs(x = "Theoretical Quantiles", y = "Sample Quantitles")+theme_bw()
+
+```
+
+
+### 1.3 AGE 19 to 64 Uninsured Percent 
+
+```{r}
+summary(Dataset_V3$AGE_19_to_64_Uninsured_Percent)
+```
+There are no missing values in AGE_19_to_64_Uninsured_Percent.
+
+
+Use histogram to See the frequency of the AGE_19_to_64_Uninsured_Percent
+
+```{r}
+ggplot(Dataset_V3%>% dplyr::filter(!is.na(AGE_19_to_64_Uninsured_Percent)),
+       aes(x=AGE_19_to_64_Uninsured_Percent))+
+  geom_histogram(fill="light blue",color='black',bins=10)+
+  xlab("AGE_19_to_64_Uninsured_Percent")+
+  ylab("Count")
+#geom_histogram() ) display the counts with bars
+# 10 bins
+```
+
+Use boxplot to show the distribution of the AGE_19_to_64_Uninsured_Percent from the perspectives group 1 and group 0
+
+```{r}
+ggplot(Dataset_V3%>% dplyr::filter(!is.na(AGE_19_to_64_Uninsured_Percent)),aes(x=rank80,y=AGE_19_to_64_Uninsured_Percent, fill=rank80))+
+  stat_boxplot(geom="errorbar")+
+  geom_boxplot(fill="light blue")+
+  ggtitle("Boxplot of AGE 19 to 64 Uninsured Percent")+
+  theme_bw()
+
+```
+
+```{r}
+Dataset_V3%>%
+  
+  summarise(
+    n=n(),
+    mean=mean(AGE_19_to_64_Uninsured_Percent,na.rm=TRUE),
+    standard_deviation=sd(AGE_19_to_64_Uninsured_Percent,na.rm=TRUE),
+    median=median(AGE_19_to_64_Uninsured_Percent,na.rm=TRUE),
+    quartRange=IQR(AGE_19_to_64_Uninsured_Percent,na.rm=TRUE),
+    min=min(AGE_19_to_64_Uninsured_Percent,na.rm=TRUE),
+    max=max(AGE_19_to_64_Uninsured_Percent,na.rm=TRUE)
+)%>%
+kable(align = "ccccccccccc",caption = "AGE 19 to 64 Uninsured Percent Total Summary ")
+```
+
+```{r}
+Dataset_V3%>%
+  group_by(rank80)%>%
+  summarise(
+    n=n(),
+    mean=mean(AGE_19_to_64_Uninsured_Percent,na.rm=TRUE),
+    standard_deviation=sd(AGE_19_to_64_Uninsured_Percent,na.rm=TRUE),
+    median=median(AGE_19_to_64_Uninsured_Percent,na.rm=TRUE),
+    quartRange=IQR(AGE_19_to_64_Uninsured_Percent,na.rm=TRUE),
+    min=min(AGE_19_to_64_Uninsured_Percent,na.rm=TRUE),
+    max=max(AGE_19_to_64_Uninsured_Percent,na.rm=TRUE)
+)%>%
+kable(align = "ccccccccccc",caption = "AGE 19 to 64 Uninsured Percent Summary ")
+```
+
+Extract the values of the potential outliers
+
+```{r}
+boxplot.stats(Dataset_V3$AGE_19_to_64_Uninsured_Percent)$out
+```
+There are eight outliers in the risk group.
+
+```{r}
+png("AGE_19_to_64_Uninsured_Percent scatter plot.png", width = 220, height = 190, units='mm', res = 300)
+  plot(1:10, 1:10, mar=c(3.5,0,3,0))
+p1<-ggplot(data=Dataset_V3%>% dplyr::filter(!is.na(AGE_19_to_64_Uninsured_Percent)), mapping = aes(sample = AGE_19_to_64_Uninsured_Percent)) +
+  stat_qq_band(alpha=0.5,conf=0.95,qtype = 1,bandType ="boot" ) +
+  stat_qq_line(identity = TRUE) +
+  stat_qq_point(col="Orange") +
+  ggtitle("Uninsured Percent of AGE 19 to 64 \n in Both Groups")
+  labs(x = "Theoretical Quantiles", y = "Sample Quantitles")+theme_bw()
+
+
+p2<-ggplot(data=Dataset_V3%>% dplyr::filter(!is.na(AGE_19_to_64_Uninsured_Percent)), mapping = aes(sample = AGE_19_to_64_Uninsured_Percent,color=rank80,fill=rank80)) +
+  stat_qq_band(alpha=0.5,conf=0.95,qtype = 1,bandType ="boot" ) +
+  stat_qq_line(identity = TRUE) +
+  stat_qq_point(col="black") +
+  facet_wrap(~rank80,scales="free")+
+  ggtitle("Uninsured Percent of AGE 19 to 64 \n in Group 0 and Group 1")+
+  labs(x = "Theoretical Quantiles", y = "Sample Quantitles")+theme_bw()
+
+ggarrange(p1, p2, 
+          labels = c("A", "B"),
+          ncol = 2, nrow = 1)
+dev.off()
+```
+
+
+
+```{r}
+ggplot(data=Dataset_V3%>% dplyr::filter(!is.na(AGE_19_to_64_Uninsured_Percent)), mapping = aes(sample = AGE_19_to_64_Uninsured_Percent,color=rank80,fill=rank80)) +
+  stat_qq_band(alpha=0.5,conf=0.95,qtype = 1,bandType ="boot" ) +
+  stat_qq_line(identity = TRUE) +
+  stat_qq_point(col="black") +
+  facet_wrap(~rank80,scales="free")+
+  labs(x = "Theoretical Quantiles", y = "Sample Quantitles")+theme_bw()
+
+```
+
+### 1.4 AGE above 65 Uninsured Percent 
+
+```{r}
+summary(Dataset_V3$AGE_Above_65_Uninsured_Percent)
+```
+There are no missing values in AGE_Above_65_Uninsured_Percent.
+
+
+Use histogram to See the frequency of the AGE_Above_65_Uninsured_Percent
+
+```{r}
+ggplot(Dataset_V3%>% dplyr::filter(!is.na(AGE_Above_65_Uninsured_Percent)),
+       aes(x=AGE_Above_65_Uninsured_Percent))+
+  geom_histogram(fill="light blue",color='black',bins=10)+
+  xlab("AGE_Above_65_Uninsured_Percent")+
+  ylab("Count")
+#geom_histogram() ) display the counts with bars
+# 10 bins
+```
+
+Use boxplot to show the distribution of the AGE_Above_65_Uninsured_Percent from the perspectives group 1 and group 0
+
+```{r}
+ggplot(Dataset_V3%>% dplyr::filter(!is.na(AGE_Above_65_Uninsured_Percent)),aes(x=rank80,y=AGE_Above_65_Uninsured_Percent, fill=rank80))+
+  stat_boxplot(geom="errorbar")+
+  geom_boxplot(fill="light blue")+
+  ggtitle("Boxplot of AGE Above 65 Uninsured Percent")+
+  theme_bw()
+
+```
+
+```{r}
+Dataset_V3%>%
+  
+  summarise(
+    n=n(),
+    mean=mean(AGE_Above_65_Uninsured_Percent,na.rm=TRUE),
+    standard_deviation=sd(AGE_Above_65_Uninsured_Percent,na.rm=TRUE),
+    median=median(AGE_Above_65_Uninsured_Percent,na.rm=TRUE),
+    quartRange=IQR(AGE_Above_65_Uninsured_Percent,na.rm=TRUE),
+    min=min(AGE_Above_65_Uninsured_Percent,na.rm=TRUE),
+    max=max(AGE_Above_65_Uninsured_Percent,na.rm=TRUE)
+)%>%
+kable(align = "ccccccccccc",caption = "AGE Above 65 Uninsured Percent Total Summary ")
+```
+
+```{r}
+Dataset_V3%>%
+  group_by(rank80)%>%
+  summarise(
+    n=n(),
+    mean=mean(AGE_Above_65_Uninsured_Percent,na.rm=TRUE),
+    standard_deviation=sd(AGE_Above_65_Uninsured_Percent,na.rm=TRUE),
+    median=median(AGE_Above_65_Uninsured_Percent,na.rm=TRUE),
+    quartRange=IQR(AGE_Above_65_Uninsured_Percent,na.rm=TRUE),
+    min=min(AGE_Above_65_Uninsured_Percent,na.rm=TRUE),
+    max=max(AGE_Above_65_Uninsured_Percent,na.rm=TRUE)
+)%>%
+kable(align = "ccccccccccc",caption = "AGE Above 65 Uninsured Percent Summary ")
+```
+
+Extract the values of the potential outliers
+
+```{r}
+boxplot.stats(Dataset_V3$AGE_Above_65_Uninsured_Percent)$out
+```
+There are 31 outliers in both groups.
+
+```{r}
+png("AGE_Above_65_Uninsured_Percent scatter plot.png", width = 220, height = 190, units='mm', res = 300)
+  plot(1:10, 1:10, mar=c(3.5,0,3,0))
+p1<-ggplot(data=Dataset_V3%>% dplyr::filter(!is.na(AGE_Above_65_Uninsured_Percent)), mapping = aes(sample = AGE_Above_65_Uninsured_Percent)) +
+  stat_qq_band(alpha=0.5,conf=0.95,qtype = 1,bandType ="boot" ) +
+  stat_qq_line(identity = TRUE) +
+  stat_qq_point(col="Orange") +
+  ggtitle("Uninsured Percent of AGE Above 65 \n in Both Groups")
+  labs(x = "Theoretical Quantiles", y = "Sample Quantitles")+theme_bw()
+
+
+p2<-ggplot(data=Dataset_V3%>% dplyr::filter(!is.na(AGE_Above_65_Uninsured_Percent)), mapping = aes(sample = AGE_Above_65_Uninsured_Percent,color=rank80,fill=rank80)) +
+  stat_qq_band(alpha=0.5,conf=0.95,qtype = 1,bandType ="boot" ) +
+  stat_qq_line(identity = TRUE) +
+  stat_qq_point(col="black") +
+  facet_wrap(~rank80,scales="free")+
+  ggtitle("Uninsured Percent of AGE Above 65 \n in Group 0 and Group 1")+
+  labs(x = "Theoretical Quantiles", y = "Sample Quantitles")+theme_bw()
+
+ggarrange(p1, p2, 
+          labels = c("A", "B"),
+          ncol = 2, nrow = 1)
+dev.off()
+```
+
+
+
+```{r}
+ggplot(data=Dataset_V3%>% dplyr::filter(!is.na(AGE_Above_65_Uninsured_Percent)), mapping = aes(sample = AGE_Above_65_Uninsured_Percent,color=rank80,fill=rank80)) +
+  stat_qq_band(alpha=0.5,conf=0.95,qtype = 1,bandType ="boot" ) +
+  stat_qq_line(identity = TRUE) +
+  stat_qq_point(col="black") +
+  facet_wrap(~rank80,scales="free")+
+  labs(x = "Theoretical Quantiles", y = "Sample Quantitles")+theme_bw()
+
+```
+
+### 1.5 Race Hispanic or Latino Uninsured Percent
+
+```{r}
+summary(Dataset_V3$Race_Hispanic_or_Latino_Uninsured_Percent)
+```
+There are no missing values in Race_Hispanic_or_Latino_Uninsured_Percent.
+
+
+Use histogram to See the frequency of the Race_Hispanic_or_Latino_Uninsured_Percent
+
+```{r}
+ggplot(Dataset_V3%>% dplyr::filter(!is.na(Race_Hispanic_or_Latino_Uninsured_Percent)),
+       aes(x=Race_Hispanic_or_Latino_Uninsured_Percent))+
+  geom_histogram(fill="light blue",color='black',bins=10)+
+  xlab("Race_Hispanic_or_Latino_Uninsured_Percent")+
+  ylab("Count")
+#geom_histogram() ) display the counts with bars
+# 10 bins
+```
+
+Use boxplot to show the distribution of the Race_Hispanic_or_Latino_Uninsured_Percent from the perspectives group 1 and group 0
+
+```{r}
+ggplot(Dataset_V3%>% dplyr::filter(!is.na(Race_Hispanic_or_Latino_Uninsured_Percent)),aes(x=rank80,y=Race_Hispanic_or_Latino_Uninsured_Percent, fill=rank80))+
+  stat_boxplot(geom="errorbar")+
+  geom_boxplot(fill="light blue")+
+  ggtitle("Boxplot of Race Hispanic or Latino Uninsured Percent")+
+  theme_bw()
+
+```
+
+```{r}
+Dataset_V3%>%
+ 
+  summarise(
+    n=n(),
+    mean=mean(Race_Hispanic_or_Latino_Uninsured_Percent,na.rm=TRUE),
+    standard_deviation=sd(Race_Hispanic_or_Latino_Uninsured_Percent,na.rm=TRUE),
+    median=median(Race_Hispanic_or_Latino_Uninsured_Percent,na.rm=TRUE),
+    quartRange=IQR(Race_Hispanic_or_Latino_Uninsured_Percent,na.rm=TRUE),
+    min=min(Race_Hispanic_or_Latino_Uninsured_Percent,na.rm=TRUE),
+    max=max(Race_Hispanic_or_Latino_Uninsured_Percent,na.rm=TRUE)
+)%>%
+kable(align = "ccccccccccc",caption = "Race Hispanic or Latino Uninsured Percent Total Summary ")
+```
+
+```{r}
+Dataset_V3%>%
+  group_by(rank80)%>%
+  summarise(
+    n=n(),
+    mean=mean(Race_Hispanic_or_Latino_Uninsured_Percent,na.rm=TRUE),
+    standard_deviation=sd(Race_Hispanic_or_Latino_Uninsured_Percent,na.rm=TRUE),
+    median=median(Race_Hispanic_or_Latino_Uninsured_Percent,na.rm=TRUE),
+    quartRange=IQR(Race_Hispanic_or_Latino_Uninsured_Percent,na.rm=TRUE),
+    min=min(Race_Hispanic_or_Latino_Uninsured_Percent,na.rm=TRUE),
+    max=max(Race_Hispanic_or_Latino_Uninsured_Percent,na.rm=TRUE)
+)%>%
+kable(align = "ccccccccccc",caption = "Race Hispanic or Latino Uninsured Percent Summary ")
+```
+
+Extract the values of the potential outliers
+
+```{r}
+boxplot.stats(Dataset_V3$Race_Hispanic_or_Latino_Uninsured_Percent)$out
+```
+There is one outliers in the safe group 0.
+
+```{r}
+png("Other Race scatter plot.png", width = 220, height = 190, units='mm', res = 300)
+  plot(1:10, 1:10, mar=c(3.5,0,3,0))
+p1<-ggplot(data=Dataset_V3%>% dplyr::filter(!is.na(Race_Hispanic_or_Latino_Uninsured_Percent)), mapping = aes(sample = Race_Hispanic_or_Latino_Uninsured_Percent)) +
+  stat_qq_band(alpha=0.5,conf=0.95,qtype = 1,bandType ="boot" ) +
+  stat_qq_line(identity = TRUE) +
+  stat_qq_point(col="Orange") +
+  ggtitle("Uninsured Percent of Other Race \n in Both Groups")
+  labs(x = "Theoretical Quantiles", y = "Sample Quantitles")+theme_bw()
+
+
+p2<-ggplot(data=Dataset_V3%>% dplyr::filter(!is.na(Race_Hispanic_or_Latino_Uninsured_Percent)), mapping = aes(sample = Race_Hispanic_or_Latino_Uninsured_Percent,color=rank80,fill=rank80)) +
+  stat_qq_band(alpha=0.5,conf=0.95,qtype = 1,bandType ="boot" ) +
+  stat_qq_line(identity = TRUE) +
+  stat_qq_point(col="black") +
+  facet_wrap(~rank80,scales="free")+
+  ggtitle("Uninsured Percent of Other Race \n in Group 0 and Group 1")+
+  labs(x = "Theoretical Quantiles", y = "Sample Quantitles")+theme_bw()
+
+ggarrange(p1, p2, 
+          labels = c("A", "B"),
+          ncol = 2, nrow = 1)
+dev.off()
+```
+
+
+
+```{r}
+ggplot(data=Dataset_V3%>% dplyr::filter(!is.na(Race_Hispanic_or_Latino_Uninsured_Percent)), mapping = aes(sample = Race_Hispanic_or_Latino_Uninsured_Percent,color=rank80,fill=rank80)) +
+  stat_qq_band(alpha=0.5,conf=0.95,qtype = 1,bandType ="boot" ) +
+  stat_qq_line(identity = TRUE) +
+  stat_qq_point(col="black") +
+  facet_wrap(~rank80,scales="free")+
+  labs(x = "Theoretical Quantiles", y = "Sample Quantitles")+theme_bw()
+
+```
+
+
+### 1.6 Race White alone Uninsured Percent
+
+```{r}
+summary(Dataset_V3$Race_White_alone_Uninsured_Percent)
+```
+There are no missing values in Race_White_alone_Uninsured_Percent.
+
+
+Use histogram to See the frequency of the Race_White_alone_Uninsured_Percent
+
+```{r}
+ggplot(Dataset_V3%>% dplyr::filter(!is.na(Race_White_alone_Uninsured_Percent)),
+       aes(x=Race_White_alone_Uninsured_Percent))+
+  geom_histogram(fill="light blue",color='black',bins=10)+
+  xlab("Race_White_alone_Uninsured_Percent")+
+  ylab("Count")
+#geom_histogram() ) display the counts with bars
+# 10 bins
+```
+
+Use boxplot to show the distribution of the Race_White_alone_Uninsured_Percent from the perspectives group 1 and group 0
+
+```{r}
+ggplot(Dataset_V3%>% dplyr::filter(!is.na(Race_White_alone_Uninsured_Percent)),aes(x=rank80,y=Race_White_alone_Uninsured_Percent, fill=rank80))+
+  stat_boxplot(geom="errorbar")+
+  geom_boxplot(fill="light blue")+
+  ggtitle("Boxplot of Race White alone Uninsured Percent")+
+  theme_bw()
+
+```
+
+```{r}
+Dataset_V3%>%
+  
+  summarise(
+    n=n(),
+    mean=mean(Race_White_alone_Uninsured_Percent,na.rm=TRUE),
+    standard_deviation=sd(Race_White_alone_Uninsured_Percent,na.rm=TRUE),
+    median=median(Race_White_alone_Uninsured_Percent,na.rm=TRUE),
+    quartRange=IQR(Race_White_alone_Uninsured_Percent,na.rm=TRUE),
+    min=min(Race_White_alone_Uninsured_Percent,na.rm=TRUE),
+    max=max(Race_White_alone_Uninsured_Percent,na.rm=TRUE)
+)%>%
+kable(align = "ccccccccccc",caption = "Race White alone Uninsured Percent Total Summary ")
+```
+
+```{r}
+Dataset_V3%>%
+  group_by(rank80)%>%
+  summarise(
+    n=n(),
+    mean=mean(Race_White_alone_Uninsured_Percent,na.rm=TRUE),
+    standard_deviation=sd(Race_White_alone_Uninsured_Percent,na.rm=TRUE),
+    median=median(Race_White_alone_Uninsured_Percent,na.rm=TRUE),
+    quartRange=IQR(Race_White_alone_Uninsured_Percent,na.rm=TRUE),
+    min=min(Race_White_alone_Uninsured_Percent,na.rm=TRUE),
+    max=max(Race_White_alone_Uninsured_Percent,na.rm=TRUE)
+)%>%
+kable(align = "ccccccccccc",caption = "Race White alone Uninsured Percent Summary ")
+```
+
+Extract the values of the potential outliers
+
+```{r}
+boxplot.stats(Dataset_V3$Race_White_alone_Uninsured_Percent)$out
+```
+There are 7 outliers in the risk group.
+
+
+
+```{r}
+png("white alone scatter plot.png", width = 220, height = 190, units='mm', res = 300)
+  plot(1:10, 1:10, mar=c(3.5,0,3,0))
+p1<-ggplot(data=Dataset_V3%>% dplyr::filter(!is.na(Race_White_alone_Uninsured_Percent)), mapping = aes(sample = Race_White_alone_Uninsured_Percent)) +
+  stat_qq_band(alpha=0.5,conf=0.95,qtype = 1,bandType ="boot" ) +
+  stat_qq_line(identity = TRUE) +
+  stat_qq_point(col="Orange") +
+  ggtitle("Uninsured Percent of White Alone \n in Both Groups")
+  labs(x = "Theoretical Quantiles", y = "Sample Quantitles")+theme_bw()
+
+
+p2<-ggplot(data=Dataset_V3%>% dplyr::filter(!is.na(Race_White_alone_Uninsured_Percent)), mapping = aes(sample = Race_White_alone_Uninsured_Percent,color=rank80,fill=rank80)) +
+  stat_qq_band(alpha=0.5,conf=0.95,qtype = 1,bandType ="boot" ) +
+  stat_qq_line(identity = TRUE) +
+  stat_qq_point(col="black") +
+  facet_wrap(~rank80,scales="free")+
+  ggtitle("Uninsured Percent of White Alone \n in Group 0 and Group 1")+
+  labs(x = "Theoretical Quantiles", y = "Sample Quantitles")+theme_bw()
+
+ggarrange(p1, p2, 
+          labels = c("A", "B"),
+          ncol = 2, nrow = 1)
+dev.off()
+```
+
+
+### 1.7 In family households Uninsured Percent
+
+
+```{r}
+summary(Dataset_V3$In_family_households_Uninsured_Percent)
+```
+There are no missing values in In_family_households_Uninsured_Percent.
+
+
+Use histogram to See the frequency of the In_family_households_Uninsured_Percent
+
+```{r}
+ggplot(Dataset_V3%>% dplyr::filter(!is.na(In_family_households_Uninsured_Percent)),
+       aes(x=In_family_households_Uninsured_Percent))+
+  geom_histogram(fill="light blue",color='black',bins=10)+
+  xlab("In_family_households_Uninsured_Percent")+
+  ylab("Count")
+#geom_histogram() ) display the counts with bars
+# 10 bins
+```
+
+Use boxplot to show the distribution of the In_family_households_Uninsured_Percent from the perspectives group 1 and group 0
+
+```{r}
+ggplot(Dataset_V3%>% dplyr::filter(!is.na(In_family_households_Uninsured_Percent)),aes(x=rank80,y=In_family_households_Uninsured_Percent, fill=rank80))+
+  stat_boxplot(geom="errorbar")+
+  geom_boxplot(fill="light blue")+
+  ggtitle("Boxplot of In family households Uninsured Percent")+
+  theme_bw()
+
+```
+
+```{r}
+Dataset_V3%>%
+  
+  summarise(
+    n=n(),
+    mean=mean(In_family_households_Uninsured_Percent,na.rm=TRUE),
+    standard_deviation=sd(In_family_households_Uninsured_Percent,na.rm=TRUE),
+    median=median(In_family_households_Uninsured_Percent,na.rm=TRUE),
+    quartRange=IQR(In_family_households_Uninsured_Percent,na.rm=TRUE),
+    min=min(In_family_households_Uninsured_Percent,na.rm=TRUE),
+    max=max(In_family_households_Uninsured_Percent,na.rm=TRUE)
+)%>%
+kable(align = "ccccccccccc",caption = "In Family Households Uninsured Percent Total Summary ")
+```
+
+```{r}
+Dataset_V3%>%
+  group_by(rank80)%>%
+  summarise(
+    n=n(),
+    mean=mean(In_family_households_Uninsured_Percent,na.rm=TRUE),
+    standard_deviation=sd(In_family_households_Uninsured_Percent,na.rm=TRUE),
+    median=median(In_family_households_Uninsured_Percent,na.rm=TRUE),
+    quartRange=IQR(In_family_households_Uninsured_Percent,na.rm=TRUE),
+    min=min(In_family_households_Uninsured_Percent,na.rm=TRUE),
+    max=max(In_family_households_Uninsured_Percent,na.rm=TRUE)
+)%>%
+kable(align = "ccccccccccc",caption = "In Family Households Uninsured Percent Summary ")
+```
+
+Extract the values of the potential outliers
+
+```{r}
+boxplot.stats(Dataset_V3$In_family_households_Uninsured_Percent)$out
+```
+There are 6 outliers in the risk group.
+
+
+```{r}
+png("In_family_households_Uninsured_Percent scatter plot.png", width = 220, height = 190, units='mm', res = 300)
+  plot(1:10, 1:10, mar=c(3.5,0,3,0))
+p1<-ggplot(data=Dataset_V3%>% dplyr::filter(!is.na(In_family_households_Uninsured_Percent)), mapping = aes(sample = In_family_households_Uninsured_Percent)) +
+  stat_qq_band(alpha=0.5,conf=0.95,qtype = 1,bandType ="boot" ) +
+  stat_qq_line(identity = TRUE) +
+  stat_qq_point(col="Orange") +
+  ggtitle("Uninsured Percent of In Family Households \n in Both Groups")
+  labs(x = "Theoretical Quantiles", y = "Sample Quantitles")+theme_bw()
+
+
+p2<-ggplot(data=Dataset_V3%>% dplyr::filter(!is.na(In_family_households_Uninsured_Percent)), mapping = aes(sample = In_family_households_Uninsured_Percent,color=rank80,fill=rank80)) +
+  stat_qq_band(alpha=0.5,conf=0.95,qtype = 1,bandType ="boot" ) +
+  stat_qq_line(identity = TRUE) +
+  stat_qq_point(col="black") +
+  facet_wrap(~rank80,scales="free")+
+  ggtitle("Uninsured Percent of In Family Households \n in Group 0 and Group 1")+
+  labs(x = "Theoretical Quantiles", y = "Sample Quantitles")+theme_bw()
+
+ggarrange(p1, p2, 
+          labels = c("A", "B"),
+          ncol = 2, nrow = 1)
+dev.off()
+```
+
+
+```{r}
+ggplot(data=Dataset_V3%>% dplyr::filter(!is.na(In_family_households_Uninsured_Percent)), mapping = aes(sample = In_family_households_Uninsured_Percent,color=rank80,fill=rank80)) +
+  stat_qq_band(alpha=0.5,conf=0.95,qtype = 1,bandType ="boot" ) +
+  stat_qq_line(identity = TRUE) +
+  stat_qq_point(col="black") +
+  facet_wrap(~rank80,scales="free")+
+  labs(x = "Theoretical Quantiles", y = "Sample Quantitles")+theme_bw()
+
+```
+
+### 1.8 In family households married Uninsured Percent
+
+```{r}
+summary(Dataset_V3$In_family_households_married_Uninsured_Percent)
+```
+There are no missing values in In_family_households_married_Uninsured_Percent.
+
+
+Use histogram to See the frequency of the In_family_households_married_Uninsured_Percent
+
+```{r}
+ggplot(Dataset_V3%>% dplyr::filter(!is.na(In_family_households_married_Uninsured_Percent)),
+       aes(x=In_family_households_married_Uninsured_Percent))+
+  geom_histogram(fill="light blue",color='black',bins=10)+
+  xlab("In Family Households Married Uninsured Percent")+
+  ylab("Count")
+#geom_histogram() ) display the counts with bars
+# 10 bins
+```
+
+Use boxplot to show the distribution of the In_family_households_married_Uninsured_Percent from the perspectives group 1 and group 0
+
+```{r}
+ggplot(Dataset_V3%>% dplyr::filter(!is.na(In_family_households_married_Uninsured_Percent)),aes(x=rank80,y=In_family_households_married_Uninsured_Percent, fill=rank80))+
+  stat_boxplot(geom="errorbar")+
+  geom_boxplot(fill="light blue")+
+  ggtitle("Boxplot of In Family Households Married Uninsured Percent")+
+  theme_bw()
+
+```
+
+```{r}
+Dataset_V3%>%
+  
+  summarise(
+    n=n(),
+    mean=mean(In_family_households_married_Uninsured_Percent,na.rm=TRUE),
+    standard_deviation=sd(In_family_households_married_Uninsured_Percent,na.rm=TRUE),
+    median=median(In_family_households_married_Uninsured_Percent,na.rm=TRUE),
+    quartRange=IQR(In_family_households_married_Uninsured_Percent,na.rm=TRUE),
+    min=min(In_family_households_married_Uninsured_Percent,na.rm=TRUE),
+    max=max(In_family_households_married_Uninsured_Percent,na.rm=TRUE)
+)%>%
+kable(align = "ccccccccccc",caption = "In Family Households Married Uninsured Percent Total Summary ")
+```
+
+```{r}
+Dataset_V3%>%
+  group_by(rank80)%>%
+  summarise(
+    n=n(),
+    mean=mean(In_family_households_married_Uninsured_Percent,na.rm=TRUE),
+    standard_deviation=sd(In_family_households_married_Uninsured_Percent,na.rm=TRUE),
+    median=median(In_family_households_married_Uninsured_Percent,na.rm=TRUE),
+    quartRange=IQR(In_family_households_married_Uninsured_Percent,na.rm=TRUE),
+    min=min(In_family_households_married_Uninsured_Percent,na.rm=TRUE),
+    max=max(In_family_households_married_Uninsured_Percent,na.rm=TRUE)
+)%>%
+kable(align = "ccccccccccc",caption = "In Family Households Married Uninsured Percent Summary ")
+```
+
+Extract the values of the potential outliers
+
+```{r}
+boxplot.stats(Dataset_V3$In_family_households_married_Uninsured_Percent)$out
+```
+There are 10 outliers in the risk group.
+
+```{r}
+png("In_family_households_married_Uninsured_Percent scatter plot.png", width = 220, height = 190, units='mm', res = 300)
+  plot(1:10, 1:10, mar=c(3.5,0,3,0))
+p1<-ggplot(data=Dataset_V3%>% dplyr::filter(!is.na(In_family_households_married_Uninsured_Percent)), mapping = aes(sample = In_family_households_married_Uninsured_Percent)) +
+  stat_qq_band(alpha=0.5,conf=0.95,qtype = 1,bandType ="boot" ) +
+  stat_qq_line(identity = TRUE) +
+  stat_qq_point(col="Orange") +
+  ggtitle("Uninsured Percent of \n In Family Households Married \n in Both Groups")
+  labs(x = "Theoretical Quantiles", y = "Sample Quantitles")+theme_bw()
+
+
+p2<-ggplot(data=Dataset_V3%>% dplyr::filter(!is.na(In_family_households_married_Uninsured_Percent)), mapping = aes(sample = In_family_households_married_Uninsured_Percent,color=rank80,fill=rank80)) +
+  stat_qq_band(alpha=0.5,conf=0.95,qtype = 1,bandType ="boot" ) +
+  stat_qq_line(identity = TRUE) +
+  stat_qq_point(col="black") +
+  facet_wrap(~rank80,scales="free")+
+  ggtitle("Uninsured Percent of \n In Family Households Married \n in Group 0 and Group 1")+
+  labs(x = "Theoretical Quantiles", y = "Sample Quantitles")+theme_bw()
+
+ggarrange(p1, p2, 
+          labels = c("A", "B"),
+          ncol = 2, nrow = 1)
+dev.off()
+```
+
+
+
+
+```{r}
+ggplot(data=Dataset_V3%>% dplyr::filter(!is.na(In_family_households_married_Uninsured_Percent)), mapping = aes(sample = In_family_households_married_Uninsured_Percent,color=rank80,fill=rank80)) +
+  stat_qq_band(alpha=0.5,conf=0.95,qtype = 1,bandType ="boot" ) +
+  stat_qq_line(identity = TRUE) +
+  stat_qq_point(col="black") +
+  facet_wrap(~rank80,scales="free")+
+  labs(x = "Theoretical Quantiles", y = "Sample Quantitles")+theme_bw()
+
+```
+
+### 1.9 In family households other Uninsured Percent
+
+```{r}
+summary(Dataset_V3$In_family_households_other_Uninsured_Percent)
+```
+There are no missing values in In_family_households_other_Uninsured_Percent.
+
+
+Use histogram to See the frequency of the In_family_households_other_Uninsured_Percent
+
+```{r}
+ggplot(Dataset_V3%>% dplyr::filter(!is.na(In_family_households_other_Uninsured_Percent)),
+       aes(x=In_family_households_other_Uninsured_Percent))+
+  geom_histogram(fill="light blue",color='black',bins=10)+
+  xlab("In_family_households_other_Uninsured_Percent")+
+  ylab("Count")
+#geom_histogram() ) display the counts with bars
+# 10 bins
+```
+
+Use boxplot to show the distribution of the In_family_households_other_Uninsured_Percent from the perspectives group 1 and group 0
+
+```{r}
+ggplot(Dataset_V3%>% dplyr::filter(!is.na(In_family_households_other_Uninsured_Percent)),aes(x=rank80,y=In_family_households_other_Uninsured_Percent, fill=rank80))+
+  stat_boxplot(geom="errorbar")+
+  geom_boxplot(fill="light blue")+
+  ggtitle("Boxplot of In Family Households Other Uninsured Percent")+
+  theme_bw()
+
+```
+
+```{r}
+Dataset_V3%>%
+  
+  summarise(
+    n=n(),
+    mean=mean(In_family_households_other_Uninsured_Percent,na.rm=TRUE),
+    standard_deviation=sd(In_family_households_other_Uninsured_Percent,na.rm=TRUE),
+    median=median(In_family_households_other_Uninsured_Percent,na.rm=TRUE),
+    quartRange=IQR(In_family_households_other_Uninsured_Percent,na.rm=TRUE),
+    min=min(In_family_households_other_Uninsured_Percent,na.rm=TRUE),
+    max=max(In_family_households_other_Uninsured_Percent,na.rm=TRUE)
+)%>%
+kable(align = "ccccccccccc",caption = "In Family Households Other Uninsured Percent Total Summary ")
+```
+
+```{r}
+Dataset_V3%>%
+  group_by(rank80)%>%
+  summarise(
+    n=n(),
+    mean=mean(In_family_households_other_Uninsured_Percent,na.rm=TRUE),
+    standard_deviation=sd(In_family_households_other_Uninsured_Percent,na.rm=TRUE),
+    median=median(In_family_households_other_Uninsured_Percent,na.rm=TRUE),
+    quartRange=IQR(In_family_households_other_Uninsured_Percent,na.rm=TRUE),
+    min=min(In_family_households_other_Uninsured_Percent,na.rm=TRUE),
+    max=max(In_family_households_other_Uninsured_Percent,na.rm=TRUE)
+)%>%
+kable(align = "ccccccccccc",caption = "In Family Households Other Uninsured Percent Summary ")
+```
+
+Extract the values of the potential outliers
+
+```{r}
+boxplot.stats(Dataset_V3$In_family_households_other_Uninsured_Percent)$out
+```
+There are 1 outlier in the risk group.
+
+```{r}
+png("In_family_households_other_Uninsured_Percent plot.png", width = 220, height = 190, units='mm', res = 300)
+  plot(1:10, 1:10, mar=c(3.5,0,3,0))
+p1<-ggplot(data=Dataset_V3%>% dplyr::filter(!is.na(In_family_households_other_Uninsured_Percent)), mapping = aes(sample = In_family_households_other_Uninsured_Percent)) +
+  stat_qq_band(alpha=0.5,conf=0.95,qtype = 1,bandType ="boot" ) +
+  stat_qq_line(identity = TRUE) +
+  stat_qq_point(col="Orange") +
+  ggtitle("Uninsured Percent of \n In Family Households Other \n in Both Groups")
+  labs(x = "Theoretical Quantiles", y = "Sample Quantitles")+theme_bw()
+
+
+p2<-ggplot(data=Dataset_V3%>% dplyr::filter(!is.na(In_family_households_other_Uninsured_Percent)), mapping = aes(sample = In_family_households_other_Uninsured_Percent,color=rank80,fill=rank80)) +
+  stat_qq_band(alpha=0.5,conf=0.95,qtype = 1,bandType ="boot" ) +
+  stat_qq_line(identity = TRUE) +
+  stat_qq_point(col="black") +
+  facet_wrap(~rank80,scales="free")+
+  ggtitle("Uninsured Percent of \n In Family Households Other \n in Group 0 and Group 1")+
+  labs(x = "Theoretical Quantiles", y = "Sample Quantitles")+theme_bw()
+
+ggarrange(p1, p2, 
+          labels = c("A", "B"),
+          ncol = 2, nrow = 1)
+dev.off()
+```
+
+
+```{r}
+ggplot(data=Dataset_V3%>% dplyr::filter(!is.na(In_family_households_other_Uninsured_Percent)), mapping = aes(sample = In_family_households_other_Uninsured_Percent,color=rank80,fill=rank80)) +
+  stat_qq_band(alpha=0.5,conf=0.95,qtype = 1,bandType ="boot" ) +
+  stat_qq_line(identity = TRUE) +
+  stat_qq_point(col="black") +
+  facet_wrap(~rank80,scales="free")+
+  labs(x = "Theoretical Quantiles", y = "Sample Quantitles")+theme_bw()
+
+```
+
+### 1.10 In non-family households Uninsured Percent
+
+```{r}
+summary(Dataset_V3$In_NonFamily_households_Uninsured_Percent)
+```
+There are no missing values in In_NonFamily_households_Uninsured_Percent.
+
+
+Use histogram to See the frequency of the In_NonFamily_households_Uninsured_Percent
+
+```{r}
+ggplot(Dataset_V3%>% dplyr::filter(!is.na(In_NonFamily_households_Uninsured_Percent)),
+       aes(x=In_NonFamily_households_Uninsured_Percent))+
+  geom_histogram(fill="light blue",color='black',bins=14)+
+  xlab("In_NonFamily_households_Uninsured_Percent")+
+  ylab("Count")
+#geom_histogram() ) display the counts with bars
+# 10 bins
+```
+
+Use boxplot to show the distribution of the In_NonFamily_households_Uninsured_Percent from the perspectives group 1 and group 0
+
+```{r}
+ggplot(Dataset_V3%>% 
+         dplyr::filter(!is.na(In_NonFamily_households_Uninsured_Percent)),aes(x=rank80,y=In_NonFamily_households_Uninsured_Percent, fill=rank80))+
+  stat_boxplot(geom="errorbar")+
+  geom_boxplot(fill="light blue")+
+  ggtitle("Boxplot of In NonFamily Households Uninsured Percent")+
+  theme_bw()
+
+```
+
+```{r}
+Dataset_V3%>%
+  
+  summarise(
+    n=n(),
+    mean=mean(In_NonFamily_households_Uninsured_Percent,na.rm=TRUE),
+    standard_deviation=sd(In_NonFamily_households_Uninsured_Percent,na.rm=TRUE),
+    median=median(In_NonFamily_households_Uninsured_Percent,na.rm=TRUE),
+    quartRange=IQR(In_NonFamily_households_Uninsured_Percent,na.rm=TRUE),
+    min=min(In_NonFamily_households_Uninsured_Percent,na.rm=TRUE),
+    max=max(In_NonFamily_households_Uninsured_Percent,na.rm=TRUE)
+)%>%
+kable(align = "ccccccccccc",caption = "In NonFamily households Uninsured Percent Total Summary ")
+```
+
+```{r}
+Dataset_V3%>%
+  group_by(rank80)%>%
+  summarise(
+    n=n(),
+    mean=mean(In_NonFamily_households_Uninsured_Percent,na.rm=TRUE),
+    standard_deviation=sd(In_NonFamily_households_Uninsured_Percent,na.rm=TRUE),
+    median=median(In_NonFamily_households_Uninsured_Percent,na.rm=TRUE),
+    quartRange=IQR(In_NonFamily_households_Uninsured_Percent,na.rm=TRUE),
+    min=min(In_NonFamily_households_Uninsured_Percent,na.rm=TRUE),
+    max=max(In_NonFamily_households_Uninsured_Percent,na.rm=TRUE)
+)%>%
+kable(align = "ccccccccccc",caption = "In NonFamily households Uninsured Percent Summary ")
+```
+
+Extract the values of the potential outliers
+
+```{r}
+boxplot.stats(Dataset_V3$In_NonFamily_households_Uninsured_Percent)$out
+```
+There are 4 outliers in the risk group.
+
+```{r}
+png("In_NonFamily_households_Uninsured_Percent scatter plot.png", width = 220, height = 190, units='mm', res = 300)
+  plot(1:10, 1:10, mar=c(3.5,0,3,0))
+p1<-ggplot(data=Dataset_V3%>% dplyr::filter(!is.na(In_NonFamily_households_Uninsured_Percent)), mapping = aes(sample = In_NonFamily_households_Uninsured_Percent)) +
+  stat_qq_band(alpha=0.5,conf=0.95,qtype = 1,bandType ="boot" ) +
+  stat_qq_line(identity = TRUE) +
+  stat_qq_point(col="Orange") +
+  ggtitle("Uninsured Percent of In NonFamily Households \n in Both Groups")
+  labs(x = "Theoretical Quantiles", y = "Sample Quantitles")+theme_bw()
+
+
+p2<-ggplot(data=Dataset_V3%>% dplyr::filter(!is.na(In_NonFamily_households_Uninsured_Percent)), mapping = aes(sample = In_NonFamily_households_Uninsured_Percent,color=rank80,fill=rank80)) +
+  stat_qq_band(alpha=0.5,conf=0.95,qtype = 1,bandType ="boot" ) +
+  stat_qq_line(identity = TRUE) +
+  stat_qq_point(col="black") +
+  facet_wrap(~rank80,scales="free")+
+  ggtitle("Uninsured Percent of In NonFamily Households \n in Group 0 and Group 1")+
+  labs(x = "Theoretical Quantiles", y = "Sample Quantitles")+theme_bw()
+
+ggarrange(p1, p2, 
+          labels = c("A", "B"),
+          ncol = 2, nrow = 1)
+dev.off()
+```
+
+
+
+```{r}
+ggplot(data=Dataset_V3%>% 
+         dplyr::filter(!is.na(In_NonFamily_households_Uninsured_Percent)), mapping = aes(sample = In_NonFamily_households_Uninsured_Percent,color=rank80,fill=rank80)) +
+  stat_qq_band(alpha=0.5,conf=0.95,qtype = 1,bandType ="boot" ) +
+  stat_qq_line(identity = TRUE) +
+  stat_qq_point(col="black") +
+  facet_wrap(~rank80,scales="free")+
+  labs(x = "Theoretical Quantiles", y = "Sample Quantitles")+theme_bw()
+
+```
+
+### 1.11 Native born Uninsured Percent
+
+```{r}
+summary(Dataset_V3$Native_Born_Uninsured_Percent)
+```
+There are no missing values in Native_Born_Uninsured_Percent.
+
+Use histogram to See the frequency of the Native_Born_Uninsured_Percent
+
+```{r}
+ggplot(Dataset_V3%>% dplyr::filter(!is.na(Native_Born_Uninsured_Percent)),
+       aes(x=Native_Born_Uninsured_Percent))+
+  geom_histogram(fill="light blue",color='black',bins=14)+
+  xlab("Native_Born_Uninsured_Percent")+
+  ylab("Count")
+#geom_histogram() ) display the counts with bars
+# 10 bins
+```
+
+Use boxplot to show the distribution of the Native_Born_Uninsured_Percent from the perspectives group 1 and group 0
+
+```{r}
+ggplot(Dataset_V3%>% dplyr::filter(!is.na(Native_Born_Uninsured_Percent)),aes(x=rank80,y=Native_Born_Uninsured_Percent, fill=rank80))+
+  stat_boxplot(geom="errorbar")+
+  geom_boxplot(fill="light blue")+
+  ggtitle("Boxplot of Native Born Uninsured Percent")+
+  theme_bw()
+
+```
+```{r}
+Dataset_V3%>%
+  
+  summarise(
+    n=n(),
+    mean=mean(Native_Born_Uninsured_Percent,na.rm=TRUE),
+    standard_deviation=sd(Native_Born_Uninsured_Percent,na.rm=TRUE),
+    median=median(Native_Born_Uninsured_Percent,na.rm=TRUE),
+    quartRange=IQR(Native_Born_Uninsured_Percent,na.rm=TRUE),
+    min=min(Native_Born_Uninsured_Percent,na.rm=TRUE),
+    max=max(Native_Born_Uninsured_Percent,na.rm=TRUE)
+)%>%
+kable(align = "ccccccccccc",caption = "Native Born Uninsured Percent Total Summary ")
+```
+
+```{r}
+Dataset_V3%>%
+  group_by(rank80)%>%
+  summarise(
+    n=n(),
+    mean=mean(Native_Born_Uninsured_Percent,na.rm=TRUE),
+    standard_deviation=sd(Native_Born_Uninsured_Percent,na.rm=TRUE),
+    median=median(Native_Born_Uninsured_Percent,na.rm=TRUE),
+    quartRange=IQR(Native_Born_Uninsured_Percent,na.rm=TRUE),
+    min=min(Native_Born_Uninsured_Percent,na.rm=TRUE),
+    max=max(Native_Born_Uninsured_Percent,na.rm=TRUE)
+)%>%
+kable(align = "ccccccccccc",caption = "Native Born Uninsured Percent Summary ")
+```
+Extract the values of the potential outliers
+
+```{r}
+boxplot.stats(Dataset_V3$Native_Born_Uninsured_Percent)$out
+```
+There are 7 outliers in the risk group.
+
+```{r}
+png("Native_Born_Uninsured_Percent scatter plot.png", width = 220, height = 190, units='mm', res = 300)
+  plot(1:10, 1:10, mar=c(3.5,0,3,0))
+p1<-ggplot(data=Dataset_V3%>% dplyr::filter(!is.na(Native_Born_Uninsured_Percent)), mapping = aes(sample = Native_Born_Uninsured_Percent)) +
+  stat_qq_band(alpha=0.5,conf=0.95,qtype = 1,bandType ="boot" ) +
+  stat_qq_line(identity = TRUE) +
+  stat_qq_point(col="Orange") +
+  ggtitle("Uninsured Percent of Native-Born \n in Both Groups")
+  labs(x = "Theoretical Quantiles", y = "Sample Quantitles")+theme_bw()
+
+
+p2<-ggplot(data=Dataset_V3%>% dplyr::filter(!is.na(Native_Born_Uninsured_Percent)), mapping = aes(sample = Native_Born_Uninsured_Percent,color=rank80,fill=rank80)) +
+  stat_qq_band(alpha=0.5,conf=0.95,qtype = 1,bandType ="boot" ) +
+  stat_qq_line(identity = TRUE) +
+  stat_qq_point(col="black") +
+  facet_wrap(~rank80,scales="free")+
+  ggtitle("Uninsured Percent of Native-Born \n in Group 0 and Group 1")+
+  labs(x = "Theoretical Quantiles", y = "Sample Quantitles")+theme_bw()
+
+ggarrange(p1, p2, 
+          labels = c("A", "B"),
+          ncol = 2, nrow = 1)
+dev.off()
+```
+
+
+
+```{r}
+ggplot(data=Dataset_V3%>% dplyr::filter(!is.na(Native_Born_Uninsured_Percent)), mapping = aes(sample = Native_Born_Uninsured_Percent,color=rank80,fill=rank80)) +
+  stat_qq_band(alpha=0.5,conf=0.95,qtype = 1,bandType ="boot" ) +
+  stat_qq_line(identity = TRUE) +
+  stat_qq_point(col="black") +
+  facet_wrap(~rank80,scales="free")+
+  labs(x = "Theoretical Quantiles", y = "Sample Quantitles")+theme_bw()
+
+```
+
+### 1.12 Foreign Born Naturalized Uninsured Percent
+
+```{r}
+summary(Dataset_V3$Foreign_Born_Naturalized_Uninsured_Percent)
+```
+There are no missing values in Foreign_Born_Naturalized_Uninsured_Percent.
+
+
+Use histogram to See the frequency of the Foreign_Born_Naturalized_Uninsured_Percent
+
+```{r}
+ggplot(Dataset_V3%>% dplyr::filter(!is.na(Foreign_Born_Naturalized_Uninsured_Percent)),
+       aes(x=Foreign_Born_Naturalized_Uninsured_Percent))+
+  geom_histogram(fill="light blue",color='black',bins=10)+
+  xlab("Foreign_Born_Naturalized_Uninsured_Percent")+
+  ylab("Count")
+#geom_histogram() ) display the counts with bars
+# 10 bins
+```
+
+Use boxplot to show the distribution of the Foreign_Born_Naturalized_Uninsured_Percent from the perspectives group 1 and group 0
+
+```{r}
+ggplot(Dataset_V3%>% 
+         dplyr::filter(!is.na(Foreign_Born_Naturalized_Uninsured_Percent)),aes(x=rank80,y=Foreign_Born_Naturalized_Uninsured_Percent, fill=rank80))+
+  stat_boxplot(geom="errorbar")+
+  geom_boxplot(fill="light blue")+
+  ggtitle("Boxplot of Foreign Born Naturalized Uninsured Percent")+
+  theme_bw()
+
+```
+
+```{r}
+Dataset_V3%>%
+  
+  summarise(
+    n=n(),
+    mean=mean(Foreign_Born_Naturalized_Uninsured_Percent,na.rm=TRUE),
+    standard_deviation=sd(Foreign_Born_Naturalized_Uninsured_Percent,na.rm=TRUE),
+    median=median(Foreign_Born_Naturalized_Uninsured_Percent,na.rm=TRUE),
+    quartRange=IQR(Foreign_Born_Naturalized_Uninsured_Percent,na.rm=TRUE),
+    min=min(Foreign_Born_Naturalized_Uninsured_Percent,na.rm=TRUE),
+    max=max(Foreign_Born_Naturalized_Uninsured_Percent,na.rm=TRUE)
+)%>%
+kable(align = "ccccccccccc",caption = "Foreign Born Naturalized Uninsured Percent Total Summary ")
+```
+
+```{r}
+Dataset_V3%>%
+  group_by(rank80)%>%
+  summarise(
+    n=n(),
+    mean=mean(Foreign_Born_Naturalized_Uninsured_Percent,na.rm=TRUE),
+    standard_deviation=sd(Foreign_Born_Naturalized_Uninsured_Percent,na.rm=TRUE),
+    median=median(Foreign_Born_Naturalized_Uninsured_Percent,na.rm=TRUE),
+    quartRange=IQR(Foreign_Born_Naturalized_Uninsured_Percent,na.rm=TRUE),
+    min=min(Foreign_Born_Naturalized_Uninsured_Percent,na.rm=TRUE),
+    max=max(Foreign_Born_Naturalized_Uninsured_Percent,na.rm=TRUE)
+)%>%
+kable(align = "ccccccccccc",caption = "Foreign Born Naturalized Uninsured Percent Summary ")
+```
+
+Extract the values of the potential outliers
+
+```{r}
+boxplot.stats(Dataset_V3$Foreign_Born_Naturalized_Uninsured_Percent)$out
+```
+There are 10 outliers in the risk group and the safe group.
+
+```{r}
+png("Foreign_Born_Naturalized_Uninsured_Percent scatter plot.png", width = 220, height = 190, units='mm', res = 300)
+  plot(1:10, 1:10, mar=c(3.5,0,3,0))
+p1<-ggplot(data=Dataset_V3%>% dplyr::filter(!is.na(Foreign_Born_Naturalized_Uninsured_Percent)), mapping = aes(sample = Foreign_Born_Naturalized_Uninsured_Percent)) +
+  stat_qq_band(alpha=0.5,conf=0.95,qtype = 1,bandType ="boot" ) +
+  stat_qq_line(identity = TRUE) +
+  stat_qq_point(col="Orange") +
+  ggtitle("Uninsured Percent of Foreign-Born Naturalized \n in Both Groups")
+  labs(x = "Theoretical Quantiles", y = "Sample Quantitles")+theme_bw()
+
+
+p2<-ggplot(data=Dataset_V3%>% dplyr::filter(!is.na(Foreign_Born_Naturalized_Uninsured_Percent)), mapping = aes(sample = Foreign_Born_Naturalized_Uninsured_Percent,color=rank80,fill=rank80)) +
+  stat_qq_band(alpha=0.5,conf=0.95,qtype = 1,bandType ="boot" ) +
+  stat_qq_line(identity = TRUE) +
+  stat_qq_point(col="black") +
+  facet_wrap(~rank80,scales="free")+
+  ggtitle("Uninsured Percent of Foreign-Born Naturalized \n in Group 0 and Group 1")+
+  labs(x = "Theoretical Quantiles", y = "Sample Quantitles")+theme_bw()
+
+ggarrange(p1, p2, 
+          labels = c("A", "B"),
+          ncol = 2, nrow = 1)
+dev.off()
+```
+
+
+
+
+```{r}
+ggplot(data=Dataset_V3%>% 
+         dplyr::filter(!is.na(Foreign_Born_Naturalized_Uninsured_Percent)), mapping = aes(sample = Foreign_Born_Naturalized_Uninsured_Percent,color=rank80,fill=rank80)) +
+  stat_qq_band(alpha=0.5,conf=0.95,qtype = 1,bandType ="boot" ) +
+  stat_qq_line(identity = TRUE) +
+  stat_qq_point(col="black") +
+  facet_wrap(~rank80,scales="free")+
+  labs(x = "Theoretical Quantiles", y = "Sample Quantitles")+theme_bw()
+
+```
+
+
+### 1.13 Foreign Born Not a citizen Uninsured Percent
+
+```{r}
+summary(Dataset_V3$Foreign_Born_Not_citizen_Uninsured_Percent)
+```
+There are no missing values in Foreign_Born_Not_citizen_Uninsured_Percent.
+
+
+Use histogram to See the frequency of the Foreign_Born_Not_citizen_Uninsured_Percent
+
+```{r}
+ggplot(Dataset_V3%>% dplyr::filter(!is.na(Foreign_Born_Not_citizen_Uninsured_Percent)),
+       aes(x=Foreign_Born_Not_citizen_Uninsured_Percent))+
+  geom_histogram(fill="light blue",color='black',bins=12)+
+  xlab("Foreign_Born_Not_citizen_Uninsured_Percent")+
+  ylab("Count")
+#geom_histogram() ) display the counts with bars
+# 10 bins
+```
+
+Use boxplot to show the distribution of the Foreign_Born_Not_citizen_Uninsured_Percent from the perspectives group 1 and group 0
+
+```{r}
+ggplot(Dataset_V3%>% dplyr::filter(!is.na(Foreign_Born_Not_citizen_Uninsured_Percent)),aes(x=rank80,y=Foreign_Born_Not_citizen_Uninsured_Percent, fill=rank80))+
+  stat_boxplot(geom="errorbar")+
+  geom_boxplot(fill="light blue")+
+  ggtitle("Boxplot of Foreign Born Not A citizen Uninsured Percent")+
+  theme_bw()
+
+```
+
+```{r}
+Dataset_V3%>%
+  
+  summarise(
+    n=n(),
+    mean=mean(Foreign_Born_Not_citizen_Uninsured_Percent,na.rm=TRUE),
+    standard_deviation=sd(Foreign_Born_Not_citizen_Uninsured_Percent,na.rm=TRUE),
+    median=median(Foreign_Born_Not_citizen_Uninsured_Percent,na.rm=TRUE),
+    quartRange=IQR(Foreign_Born_Not_citizen_Uninsured_Percent,na.rm=TRUE),
+    min=min(Foreign_Born_Not_citizen_Uninsured_Percent,na.rm=TRUE),
+    max=max(Foreign_Born_Not_citizen_Uninsured_Percent,na.rm=TRUE)
+)%>%
+kable(align = "ccccccccccc",caption = "Foreign Born Not A citizen Uninsured Percent Total Summary ")
+```
+
+
+```{r}
+Dataset_V3%>%
+  group_by(rank80)%>%
+  summarise(
+    n=n(),
+    mean=mean(Foreign_Born_Not_citizen_Uninsured_Percent,na.rm=TRUE),
+    standard_deviation=sd(Foreign_Born_Not_citizen_Uninsured_Percent,na.rm=TRUE),
+    median=median(Foreign_Born_Not_citizen_Uninsured_Percent,na.rm=TRUE),
+    quartRange=IQR(Foreign_Born_Not_citizen_Uninsured_Percent,na.rm=TRUE),
+    min=min(Foreign_Born_Not_citizen_Uninsured_Percent,na.rm=TRUE),
+    max=max(Foreign_Born_Not_citizen_Uninsured_Percent,na.rm=TRUE)
+)%>%
+kable(align = "ccccccccccc",caption = "Foreign Born Not A citizen Uninsured Percent Summary ")
+```
+Extract the values of the potential outliers
+
+```{r}
+boxplot.stats(Dataset_V3$Foreign_Born_Not_citizen_Uninsured_Percent)$out
+```
+There are 0 outliers.
+
+```{r}
+png("Foreign_Born_Not_citizen_Uninsured_Percent scatter plot.png", width = 220, height = 190, units='mm', res = 300)
+  plot(1:10, 1:10, mar=c(3.5,0,3,0))
+p1<-ggplot(data=Dataset_V3%>% dplyr::filter(!is.na(Foreign_Born_Not_citizen_Uninsured_Percent)), mapping = aes(sample = Foreign_Born_Not_citizen_Uninsured_Percent)) +
+  stat_qq_band(alpha=0.5,conf=0.95,qtype = 1,bandType ="boot" ) +
+  stat_qq_line(identity = TRUE) +
+  stat_qq_point(col="Orange") +
+  ggtitle("Uninsured Percent of Foreign-Born Not Citizen \n in Both Groups")
+  labs(x = "Theoretical Quantiles", y = "Sample Quantitles")+theme_bw()
+
+
+p2<-ggplot(data=Dataset_V3%>% dplyr::filter(!is.na(Foreign_Born_Not_citizen_Uninsured_Percent)), mapping = aes(sample = Foreign_Born_Not_citizen_Uninsured_Percent,color=rank80,fill=rank80)) +
+  stat_qq_band(alpha=0.5,conf=0.95,qtype = 1,bandType ="boot" ) +
+  stat_qq_line(identity = TRUE) +
+  stat_qq_point(col="black") +
+  facet_wrap(~rank80,scales="free")+
+  ggtitle("Uninsured Percent of Foreign-Born Not Citizen \n in Group 0 and Group 1")+
+  labs(x = "Theoretical Quantiles", y = "Sample Quantitles")+theme_bw()
+
+ggarrange(p1, p2, 
+          labels = c("A", "B"),
+          ncol = 2, nrow = 1)
+dev.off()
+```
+
+
+
+```{r}
+ggplot(data=Dataset_V3%>% dplyr::filter(!is.na(Foreign_Born_Not_citizen_Uninsured_Percent)), mapping = aes(sample = Foreign_Born_Not_citizen_Uninsured_Percent,color=rank80,fill=rank80)) +
+  stat_qq_band(alpha=0.5,conf=0.95,qtype = 1,bandType ="boot" ) +
+  stat_qq_line(identity = TRUE) +
+  stat_qq_point(col="black") +
+  facet_wrap(~rank80,scales="free")+
+  labs(x = "Theoretical Quantiles", y = "Sample Quantitles")+theme_bw()
+
+```
+
+### 1.14 Less than high school graduate Uninsured Percent
+
+```{r}
+summary(Dataset_V3$Less_than_high_school_graduate_Uninsured_Percent)
+```
+There are no missing values in Less_than_high_school_graduate_Uninsured_Percent.
+
+Use histogram to See the frequency of the Less_than_high_school_graduate_Uninsured_Percent
+
+```{r}
+ggplot(Dataset_V3%>% dplyr::filter(!is.na(Less_than_high_school_graduate_Uninsured_Percent)),
+       aes(x=Less_than_high_school_graduate_Uninsured_Percent))+
+  geom_histogram(fill="light blue",color='black',bins=10)+
+  xlab("Less_than_high_school_graduate_Uninsured_Percent")+
+  ylab("Count")
+#geom_histogram() ) display the counts with bars
+# 10 bins
+```
+
+
+Use boxplot to show the distribution of the Less_than_high_school_graduate_Uninsured_Percent from the perspectives group 1 and group 0
+
+```{r}
+ggplot(Dataset_V3%>% 
+         dplyr::filter(!is.na(Less_than_high_school_graduate_Uninsured_Percent)),aes(x=rank80,y=Less_than_high_school_graduate_Uninsured_Percent, fill=rank80))+
+  stat_boxplot(geom="errorbar")+
+  geom_boxplot(fill="light blue")+
+  ggtitle("Boxplot of Less than High School Graduate Uninsured Percent")+
+  theme_bw()
+
+```
+
+
+```{r}
+Dataset_V3%>%
+  
+  summarise(
+    n=n(),
+    mean=mean(Less_than_high_school_graduate_Uninsured_Percent,na.rm=TRUE),
+    standard_deviation=sd(Less_than_high_school_graduate_Uninsured_Percent,na.rm=TRUE),
+    median=median(Less_than_high_school_graduate_Uninsured_Percent,na.rm=TRUE),
+    quartRange=IQR(Less_than_high_school_graduate_Uninsured_Percent,na.rm=TRUE),
+    min=min(Less_than_high_school_graduate_Uninsured_Percent,na.rm=TRUE),
+    max=max(Less_than_high_school_graduate_Uninsured_Percent,na.rm=TRUE)
+)%>%
+kable(align = "ccccccccccc",caption = "Less than High School Graduate Uninsured Percent Total Summary ")
+```
+```{r}
+Dataset_V3%>%
+  group_by(rank80)%>%
+  summarise(
+    n=n(),
+    mean=mean(Less_than_high_school_graduate_Uninsured_Percent,na.rm=TRUE),
+    standard_deviation=sd(Less_than_high_school_graduate_Uninsured_Percent,na.rm=TRUE),
+    median=median(Less_than_high_school_graduate_Uninsured_Percent,na.rm=TRUE),
+    quartRange=IQR(Less_than_high_school_graduate_Uninsured_Percent,na.rm=TRUE),
+    min=min(Less_than_high_school_graduate_Uninsured_Percent,na.rm=TRUE),
+    max=max(Less_than_high_school_graduate_Uninsured_Percent,na.rm=TRUE)
+)%>%
+kable(align = "ccccccccccc",caption = "Less than High School Graduate Uninsured Percent Summary ")
+```
+
+Extract the values of the potential outliers
+
+```{r}
+boxplot.stats(Dataset_V3$Less_than_high_school_graduate_Uninsured_Percent)$out
+
+```
+There are 0 outlier in the risk group.
+
+```{r}
+png("Less_than_high_school_graduate_Uninsured_Percent scatter plot.png", width = 220, height = 190, units='mm', res = 300)
+  plot(1:10, 1:10, mar=c(3.5,0,3,0))
+p1<-ggplot(data=Dataset_V3%>% dplyr::filter(!is.na(Less_than_high_school_graduate_Uninsured_Percent)), mapping = aes(sample = Less_than_high_school_graduate_Uninsured_Percent)) +
+  stat_qq_band(alpha=0.5,conf=0.95,qtype = 1,bandType ="boot" ) +
+  stat_qq_line(identity = TRUE) +
+  stat_qq_point(col="Orange") +
+  ggtitle("Uninsured Percent of Less than High School \n Graduate  in Both Groups")
+  labs(x = "Theoretical Quantiles", y = "Sample Quantitles")+theme_bw()
+
+
+p2<-ggplot(data=Dataset_V3%>% dplyr::filter(!is.na(Less_than_high_school_graduate_Uninsured_Percent)), mapping = aes(sample = Less_than_high_school_graduate_Uninsured_Percent,color=rank80,fill=rank80)) +
+  stat_qq_band(alpha=0.5,conf=0.95,qtype = 1,bandType ="boot" ) +
+  stat_qq_line(identity = TRUE) +
+  stat_qq_point(col="black") +
+  facet_wrap(~rank80,scales="free")+
+  ggtitle("Uninsured Percent of Less than High School \n Graduate  in Group 0 and Group 1")+
+  labs(x = "Theoretical Quantiles", y = "Sample Quantitles")+theme_bw()
+
+ggarrange(p1, p2, 
+          labels = c("A", "B"),
+          ncol = 2, nrow = 1)
+dev.off()
+```
+
+
+
+```{r}
+ggplot(data=Dataset_V3%>% 
+         dplyr::filter(!is.na(Less_than_high_school_graduate_Uninsured_Percent)), mapping = aes(sample = Less_than_high_school_graduate_Uninsured_Percent,color=rank80,fill=rank80)) +
+  stat_qq_band(alpha=0.5,conf=0.95,qtype = 1,bandType ="boot" ) +
+  stat_qq_line(identity = TRUE) +
+  stat_qq_point(col="black") +
+  facet_wrap(~rank80,scales="free")+
+  labs(x = "Theoretical Quantiles", y = "Sample Quantitles")+theme_bw()
+
+```
+
+### 1.15 High school graduate Uninsured Percent
+
+```{r}
+summary(Dataset_V3$High_school_graduate_Uninsured_Percent)
+```
+There are no missing values in High_school_graduate_Uninsured_Percent.
+
+
+Use histogram to See the frequency of the High_school_graduate_Uninsured_Percent
+
+```{r}
+ggplot(Dataset_V3%>% dplyr::filter(!is.na(High_school_graduate_Uninsured_Percent)),
+       aes(x=High_school_graduate_Uninsured_Percent))+
+  geom_histogram(fill="light blue",color='black',bins=10)+
+  xlab("High_school_graduate_Uninsured_Percent")+
+  ylab("Count")
+#geom_histogram() ) display the counts with bars
+# 10 bins
+```
+
+Use boxplot to show the distribution of the High_school_graduate_Uninsured_Percent from the perspectives group 1 and group 0
+
+```{r}
+ggplot(Dataset_V3 %>% dplyr::filter(!is.na(High_school_graduate_Uninsured_Percent)),aes(x=rank80,y=High_school_graduate_Uninsured_Percent, fill=rank80))+
+  stat_boxplot(geom="errorbar")+
+  geom_boxplot(fill="light blue")+
+  ggtitle("Boxplot of High School Graduate Uninsured Percent")+
+  theme_bw()
+
+```
+
+```{r}
+Dataset_V3 %>%
+  
+  summarise(
+    n=n(),
+    mean=mean(High_school_graduate_Uninsured_Percent,na.rm=TRUE),
+    standard_deviation=sd(High_school_graduate_Uninsured_Percent,na.rm=TRUE),
+    median=median(High_school_graduate_Uninsured_Percent,na.rm=TRUE),
+    quartRange=IQR(High_school_graduate_Uninsured_Percent,na.rm=TRUE),
+    min=min(High_school_graduate_Uninsured_Percent,na.rm=TRUE),
+    max=max(High_school_graduate_Uninsured_Percent,na.rm=TRUE)
+)%>%
+kable(align = "ccccccccccc",caption = "High School Graduate Uninsured Percent Total Summary ")
+```
+```{r}
+Dataset_V3 %>%
+  group_by(rank80)%>%
+  summarise(
+    n=n(),
+    mean=mean(High_school_graduate_Uninsured_Percent,na.rm=TRUE),
+    standard_deviation=sd(High_school_graduate_Uninsured_Percent,na.rm=TRUE),
+    median=median(High_school_graduate_Uninsured_Percent,na.rm=TRUE),
+    quartRange=IQR(High_school_graduate_Uninsured_Percent,na.rm=TRUE),
+    min=min(High_school_graduate_Uninsured_Percent,na.rm=TRUE),
+    max=max(High_school_graduate_Uninsured_Percent,na.rm=TRUE)
+)%>%
+kable(align = "ccccccccccc",caption = "High School Graduate Uninsured Percent Summary ")
+```
+
+Extract the values of the potential outliers
+
+```{r}
+boxplot.stats(Dataset_V3$High_school_graduate_Uninsured_Percent)$out
+```
+There is 1 outlier in the safe group.
+
+```{r}
+png("High_school_graduate_Uninsured_Percent scatter plot.png", width = 220, height = 190, units='mm', res = 300)
+  plot(1:10, 1:10, mar=c(3.5,0,3,0))
+p1<-ggplot(data=Dataset_V3%>% dplyr::filter(!is.na(High_school_graduate_Uninsured_Percent)), mapping = aes(sample = High_school_graduate_Uninsured_Percent)) +
+  stat_qq_band(alpha=0.5,conf=0.95,qtype = 1,bandType ="boot" ) +
+  stat_qq_line(identity = TRUE) +
+  stat_qq_point(col="Orange") +
+  ggtitle("Uninsured Percent of High School Graduate \n in Both Groups")
+  labs(x = "Theoretical Quantiles", y = "Sample Quantitles")+theme_bw()
+
+
+p2<-ggplot(data=Dataset_V3%>% dplyr::filter(!is.na(High_school_graduate_Uninsured_Percent)), mapping = aes(sample = High_school_graduate_Uninsured_Percent,color=rank80,fill=rank80)) +
+  stat_qq_band(alpha=0.5,conf=0.95,qtype = 1,bandType ="boot" ) +
+  stat_qq_line(identity = TRUE) +
+  stat_qq_point(col="black") +
+  facet_wrap(~rank80,scales="free")+
+  ggtitle("Uninsured Percent of High School Graduate \n in Group 0 and Group 1")+
+  labs(x = "Theoretical Quantiles", y = "Sample Quantitles")+theme_bw()
+
+ggarrange(p1, p2, 
+          labels = c("A", "B"),
+          ncol = 2, nrow = 1)
+dev.off()
+```
+
+
+```{r}
+ggplot(data=Dataset_V3 %>% dplyr::filter(!is.na(High_school_graduate_Uninsured_Percent)), mapping = aes(sample = High_school_graduate_Uninsured_Percent,color=rank80,fill=rank80)) +
+  stat_qq_band(alpha=0.5,conf=0.95,qtype = 1,bandType ="boot" ) +
+  stat_qq_line(identity = TRUE) +
+  stat_qq_point(col="black") +
+  facet_wrap(~rank80,scales="free")+
+  labs(x = "Theoretical Quantiles", y = "Sample Quantitles")+theme_bw()
+
+```
+
+
+### 1.16 Some college or associate's degree Uninsured Percent
+
+```{r}
+summary(Dataset_V3$Some_college_or_associate_degree_Uninsured_Percent)
+```
+There are no missing values in Some_college_or_associate_degree_Uninsured_Percent.
+
+Use histogram to See the frequency of the Some_college_or_associate_degree_Uninsured_Percent
+
+```{r}
+ggplot(Dataset_V3%>% dplyr::filter(!is.na(Some_college_or_associate_degree_Uninsured_Percent)),
+       aes(x=Some_college_or_associate_degree_Uninsured_Percent))+
+  geom_histogram(fill="light blue",color='black',bins=10)+
+  xlab("Some_college_or_associate_degree_Uninsured_Percent")+
+  ylab("Count")
+#geom_histogram() ) display the counts with bars
+# 10 bins
+```
+
+Use boxplot to show the distribution of the Some_college_or_associate_degree_Uninsured_Percent from the perspectives group 1 and group 0
+
+```{r}
+ggplot(Dataset_V3%>% dplyr::filter(!is.na(Some_college_or_associate_degree_Uninsured_Percent)),aes(x=rank80,y=Some_college_or_associate_degree_Uninsured_Percent, fill=rank80))+
+  stat_boxplot(geom="errorbar")+
+  geom_boxplot(fill="light blue")+
+  ggtitle("Boxplot of Some College or Associate Degree Uninsured Percent")+
+  theme_bw()
+
+```
+
+```{r}
+Dataset_V3 %>%
+  
+  summarise(
+    n=n(),
+    mean=mean(Some_college_or_associate_degree_Uninsured_Percent,na.rm=TRUE),
+    standard_deviation=sd(Some_college_or_associate_degree_Uninsured_Percent,na.rm=TRUE),
+    median=median(Some_college_or_associate_degree_Uninsured_Percent,na.rm=TRUE),
+    quartRange=IQR(Some_college_or_associate_degree_Uninsured_Percent,na.rm=TRUE),
+    min=min(Some_college_or_associate_degree_Uninsured_Percent,na.rm=TRUE),
+    max=max(Some_college_or_associate_degree_Uninsured_Percent,na.rm=TRUE)
+)%>%
+kable(align = "ccccccccccc",caption = "Some College or Associate Degree Uninsured Percent Total Summary ")
+```
+
+```{r}
+Dataset_V3 %>%
+  group_by(rank80)%>%
+  summarise(
+    n=n(),
+    mean=mean(Some_college_or_associate_degree_Uninsured_Percent,na.rm=TRUE),
+    standard_deviation=sd(Some_college_or_associate_degree_Uninsured_Percent,na.rm=TRUE),
+    median=median(Some_college_or_associate_degree_Uninsured_Percent,na.rm=TRUE),
+    quartRange=IQR(Some_college_or_associate_degree_Uninsured_Percent,na.rm=TRUE),
+    min=min(Some_college_or_associate_degree_Uninsured_Percent,na.rm=TRUE),
+    max=max(Some_college_or_associate_degree_Uninsured_Percent,na.rm=TRUE)
+)%>%
+kable(align = "ccccccccccc",caption = "Some College or Associate Degree Uninsured Percent Summary ")
+```
+
+Extract the values of the potential outliers
+
+```{r}
+boxplot.stats(Dataset_V3$Some_college_or_associate_degree_Uninsured_Percent)$out
+```
+There are 7 outliers in the both group.
+
+```{r}
+png("Some_college_or_associate_degree_Uninsured_Percent scatter plot.png", width = 220, height = 190, units='mm', res = 300)
+  plot(1:10, 1:10, mar=c(3.5,0,3,0))
+p1<-ggplot(data=Dataset_V3%>% dplyr::filter(!is.na(Some_college_or_associate_degree_Uninsured_Percent)), mapping = aes(sample = Some_college_or_associate_degree_Uninsured_Percent)) +
+  stat_qq_band(alpha=0.5,conf=0.95,qtype = 1,bandType ="boot" ) +
+  stat_qq_line(identity = TRUE) +
+  stat_qq_point(col="Orange") +
+  ggtitle("Uninsured Percent of Some College or \n Associate Degree in Both Groups")
+  labs(x = "Theoretical Quantiles", y = "Sample Quantitles")+theme_bw()
+
+
+p2<-ggplot(data=Dataset_V3%>% dplyr::filter(!is.na(Some_college_or_associate_degree_Uninsured_Percent)), mapping = aes(sample = Some_college_or_associate_degree_Uninsured_Percent,color=rank80,fill=rank80)) +
+  stat_qq_band(alpha=0.5,conf=0.95,qtype = 1,bandType ="boot" ) +
+  stat_qq_line(identity = TRUE) +
+  stat_qq_point(col="black") +
+  facet_wrap(~rank80,scales="free")+
+  ggtitle("Uninsured Percent of Some College or \n Associate Degree in Group 0 and Group 1")+
+  labs(x = "Theoretical Quantiles", y = "Sample Quantitles")+theme_bw()
+
+ggarrange(p1, p2, 
+          labels = c("A", "B"),
+          ncol = 2, nrow = 1)
+dev.off()
+```
+
+
+```{r}
+ggplot(data=Dataset_V3%>% dplyr::filter(!is.na(Some_college_or_associate_degree_Uninsured_Percent)), mapping = aes(sample = Some_college_or_associate_degree_Uninsured_Percent,color=rank80,fill=rank80)) +
+  stat_qq_band(alpha=0.5,conf=0.95,qtype = 1,bandType ="boot" ) +
+  stat_qq_line(identity = TRUE) +
+  stat_qq_point(col="black") +
+  facet_wrap(~rank80,scales="free")+
+  labs(x = "Theoretical Quantiles", y = "Sample Quantitles")+theme_bw()
+
+```
+
+### 1.17 Bachelor's degree or higher degree Uninsured Percent
+
+```{r}
+summary(Dataset_V3$Bachelor_or_higher_Uninsured_Percent)
+```
+There are no missing values in Bachelor_or_higher_Uninsured_Percent.
+
+Use histogram to See the frequency of the Bachelor_or_higher_Uninsured_Percent
+
+```{r}
+ggplot(Dataset_V3%>% dplyr::filter(!is.na(Bachelor_or_higher_Uninsured_Percent)),
+       aes(x=Bachelor_or_higher_Uninsured_Percent))+
+  geom_histogram(fill="light blue",color='black',bins=10)+
+  xlab("Bachelor_or_higher_Uninsured_Percent")+
+  ylab("Count")
+#geom_histogram() ) display the counts with bars
+# 10 bins
+```
+
+Use boxplot to show the distribution of the Bachelor_or_higher_Uninsured_Percent from the perspectives group 1 and group 0
+
+```{r}
+ggplot(Dataset_V3%>% dplyr::filter(!is.na(Bachelor_or_higher_Uninsured_Percent)),aes(x=rank80,y=Bachelor_or_higher_Uninsured_Percent, fill=rank80))+
+  stat_boxplot(geom="errorbar")+
+  geom_boxplot(fill="light blue")+
+  ggtitle("Boxplot of Bachelor or Higher Uninsured Percent")+
+  theme_bw()
+
+```
+
+```{r}
+Dataset_V3%>%
+ 
+  summarise(
+    n=n(),
+    mean=mean(Bachelor_or_higher_Uninsured_Percent,na.rm=TRUE),
+    standard_deviation=sd(Bachelor_or_higher_Uninsured_Percent,na.rm=TRUE),
+    median=median(Bachelor_or_higher_Uninsured_Percent,na.rm=TRUE),
+    quartRange=IQR(Bachelor_or_higher_Uninsured_Percent,na.rm=TRUE),
+    min=min(Bachelor_or_higher_Uninsured_Percent,na.rm=TRUE),
+    max=max(Bachelor_or_higher_Uninsured_Percent,na.rm=TRUE)
+)%>%
+kable(align = "ccccccccccc",caption = "Bachelor or Higher Uninsured Percent Total Summary ")
+```
+
+```{r}
+Dataset_V3%>%
+  group_by(rank80)%>%
+  summarise(
+    n=n(),
+    mean=mean(Bachelor_or_higher_Uninsured_Percent,na.rm=TRUE),
+    standard_deviation=sd(Bachelor_or_higher_Uninsured_Percent,na.rm=TRUE),
+    median=median(Bachelor_or_higher_Uninsured_Percent,na.rm=TRUE),
+    quartRange=IQR(Bachelor_or_higher_Uninsured_Percent,na.rm=TRUE),
+    min=min(Bachelor_or_higher_Uninsured_Percent,na.rm=TRUE),
+    max=max(Bachelor_or_higher_Uninsured_Percent,na.rm=TRUE)
+)%>%
+kable(align = "ccccccccccc",caption = "Bachelor or Higher Uninsured Percent Summary ")
+```
+
+Extract the values of the potential outliers
+
+```{r}
+boxplot.stats(Dataset_V3$Bachelor_or_higher_Uninsured_Percent)$out
+```
+There are 10 outliers in the both group.
+
+```{r}
+png("Bachelor_or_higher_Uninsured_Percent scatter plot.png", width = 220, height = 190, units='mm', res = 300)
+  plot(1:10, 1:10, mar=c(3.5,0,3,0))
+p1<-ggplot(data=Dataset_V3%>% dplyr::filter(!is.na(Bachelor_or_higher_Uninsured_Percent)), mapping = aes(sample = Bachelor_or_higher_Uninsured_Percent)) +
+  stat_qq_band(alpha=0.5,conf=0.95,qtype = 1,bandType ="boot" ) +
+  stat_qq_line(identity = TRUE) +
+  stat_qq_point(col="Orange") +
+  ggtitle("Uninsured Percent of Bachelor or Higher \n in Both Groups")
+  labs(x = "Theoretical Quantiles", y = "Sample Quantitles")+theme_bw()
+
+
+p2<-ggplot(data=Dataset_V3%>% dplyr::filter(!is.na(Bachelor_or_higher_Uninsured_Percent)), mapping = aes(sample = Bachelor_or_higher_Uninsured_Percent,color=rank80,fill=rank80)) +
+  stat_qq_band(alpha=0.5,conf=0.95,qtype = 1,bandType ="boot" ) +
+  stat_qq_line(identity = TRUE) +
+  stat_qq_point(col="black") +
+  facet_wrap(~rank80,scales="free")+
+  ggtitle("Uninsured Percent of Bachelor or Higher \n in Group 0 and Group 1")+
+  labs(x = "Theoretical Quantiles", y = "Sample Quantitles")+theme_bw()
+
+ggarrange(p1, p2, 
+          labels = c("A", "B"),
+          ncol = 2, nrow = 1)
+dev.off()
+```
+
+
+```{r}
+ggplot(data=Dataset_V3%>% dplyr::filter(!is.na(Bachelor_or_higher_Uninsured_Percent)), mapping = aes(sample = Bachelor_or_higher_Uninsured_Percent,color=rank80,fill=rank80)) +
+  stat_qq_band(alpha=0.5,conf=0.95,qtype = 1,bandType ="boot" ) +
+  stat_qq_line(identity = TRUE) +
+  stat_qq_point(col="black") +
+  facet_wrap(~rank80,scales="free")+
+  labs(x = "Theoretical Quantiles", y = "Sample Quantitles")+theme_bw()
+
+```
+
+### 1.18 Worked full-time Uninsured Percent
+
+```{r}
+summary(Dataset_V3$Worked_Full_time_Uninsured_Percent)
+```
+There are no missing values in Worked_Full_time_Uninsured_Percent.
+
+
+Use histogram to See the frequency of the Worked_Full_time_Uninsured_Percent
+
+```{r}
+ggplot(Dataset_V3%>% dplyr::filter(!is.na(Worked_Full_time_Uninsured_Percent)),
+       aes(x=Worked_Full_time_Uninsured_Percent))+
+  geom_histogram(fill="light blue",color='black',bins=10)+
+  xlab("Worked_Full_time_Uninsured_Percent")+
+  ylab("Count")
+#geom_histogram() ) display the counts with bars
+# 10 bins
+```
+
+Use boxplot to show the distribution of the Worked_Full_time_Uninsured_Percent from the perspectives group 1 and group 0
+
+```{r}
+ggplot(Dataset_V3%>% 
+         dplyr::filter(!is.na(Worked_Full_time_Uninsured_Percent)),aes(x=rank80,y=Worked_Full_time_Uninsured_Percent, fill=rank80))+
+  stat_boxplot(geom="errorbar")+
+  geom_boxplot(fill="light blue")+
+  ggtitle("Boxplot of Worked Full Time Uninsured Percent")+
+  theme_bw()
+
+```
+
+```{r}
+Dataset_V3%>%
+  
+  summarise(
+    n=n(),
+    mean=mean(Worked_Full_time_Uninsured_Percent,na.rm=TRUE),
+    standard_deviation=sd(Worked_Full_time_Uninsured_Percent,na.rm=TRUE),
+    median=median(Worked_Full_time_Uninsured_Percent,na.rm=TRUE),
+    quartRange=IQR(Worked_Full_time_Uninsured_Percent,na.rm=TRUE),
+    min=min(Worked_Full_time_Uninsured_Percent,na.rm=TRUE),
+    max=max(Worked_Full_time_Uninsured_Percent,na.rm=TRUE)
+)%>%
+kable(align = "ccccccccccc",caption = "Worked Full Time Uninsured Percent Total Summary ")
+```
+
+```{r}
+Dataset_V3%>%
+  group_by(rank80)%>%
+  summarise(
+    n=n(),
+    mean=mean(Worked_Full_time_Uninsured_Percent,na.rm=TRUE),
+    standard_deviation=sd(Worked_Full_time_Uninsured_Percent,na.rm=TRUE),
+    median=median(Worked_Full_time_Uninsured_Percent,na.rm=TRUE),
+    quartRange=IQR(Worked_Full_time_Uninsured_Percent,na.rm=TRUE),
+    min=min(Worked_Full_time_Uninsured_Percent,na.rm=TRUE),
+    max=max(Worked_Full_time_Uninsured_Percent,na.rm=TRUE)
+)%>%
+kable(align = "ccccccccccc",caption = "Worked Full Time Uninsured Percent Summary ")
+```
+Extract the values of the potential outliers
+
+```{r}
+boxplot.stats(Dataset_V3$Worked_Full_time_Uninsured_Percent)$out
+```
+There are 15 outliers in the both group.
+
+```{r}
+png("Worked_Full_time_Uninsured_Percent scatter plot.png", width = 220, height = 190, units='mm', res = 300)
+  plot(1:10, 1:10, mar=c(3.5,0,3,0))
+p1<-ggplot(data=Dataset_V3%>% dplyr::filter(!is.na(Worked_Full_time_Uninsured_Percent)), mapping = aes(sample = Worked_Full_time_Uninsured_Percent)) +
+  stat_qq_band(alpha=0.5,conf=0.95,qtype = 1,bandType ="boot" ) +
+  stat_qq_line(identity = TRUE) +
+  stat_qq_point(col="Orange") +
+  ggtitle("Uninsured Percent of Worked Full-Time \n in Both Groups")
+  labs(x = "Theoretical Quantiles", y = "Sample Quantitles")+theme_bw()
+
+
+p2<-ggplot(data=Dataset_V3%>% dplyr::filter(!is.na(Worked_Full_time_Uninsured_Percent)), mapping = aes(sample = Worked_Full_time_Uninsured_Percent,color=rank80,fill=rank80)) +
+  stat_qq_band(alpha=0.5,conf=0.95,qtype = 1,bandType ="boot" ) +
+  stat_qq_line(identity = TRUE) +
+  stat_qq_point(col="black") +
+  facet_wrap(~rank80,scales="free")+
+  ggtitle("Uninsured Percent of Worked Full-Time \n in Group 0 and Group 1")+
+  labs(x = "Theoretical Quantiles", y = "Sample Quantitles")+theme_bw()
+
+ggarrange(p1, p2, 
+          labels = c("A", "B"),
+          ncol = 2, nrow = 1)
+dev.off()
+```
+
+
+```{r}
+ggplot(data=Dataset_V3%>% 
+         dplyr::filter(!is.na(Worked_Full_time_Uninsured_Percent)), mapping = aes(sample = Worked_Full_time_Uninsured_Percent,color=rank80,fill=rank80)) +
+  stat_qq_band(alpha=0.5,conf=0.95,qtype = 1,bandType ="boot" ) +
+  stat_qq_line(identity = TRUE) +
+  stat_qq_point(col="black") +
+  facet_wrap(~rank80,scales="free")+
+  labs(x = "Theoretical Quantiles", y = "Sample Quantitles")+theme_bw()
+
+```
+
+### 1.19 Worked less than full-time Uninsured Percent
+
+```{r}
+summary(Dataset_V3$Worked_less_FullTime_Uninsured_Percent)
+```
+There are no missing values in Worked_less_FullTime_Uninsured_Percent.
+
+
+
+Use histogram to See the frequency of the Worked_less_FullTime_Uninsured_Percent
+
+```{r}
+ggplot(Dataset_V3%>% dplyr::filter(!is.na(Worked_less_FullTime_Uninsured_Percent)),
+       aes(x=Worked_less_FullTime_Uninsured_Percent))+
+  geom_histogram(fill="light blue",color='black',bins=14)+
+  xlab("Worked_less_FullTime_Uninsured_Percent")+
+  ylab("Count")
+#geom_histogram() ) display the counts with bars
+# 10 bins
+```
+
+Use boxplot to show the distribution of the Worked_less_FullTime_Uninsured_Percent from the perspectives group 1 and group 0
+
+```{r}
+ggplot(Dataset_V3%>% dplyr::filter(!is.na(Worked_less_FullTime_Uninsured_Percent)),aes(x=rank80,y=Worked_less_FullTime_Uninsured_Percent, fill=rank80))+
+  stat_boxplot(geom="errorbar")+
+  geom_boxplot(fill="light blue")+
+  ggtitle("Boxplot of Worked Less Than FullTime Uninsured Percent")+
+  theme_bw()
+
+```
+
+```{r}
+Dataset_V3%>%
+  
+  summarise(
+    n=n(),
+    mean=mean(Worked_less_FullTime_Uninsured_Percent,na.rm=TRUE),
+    standard_deviation=sd(Worked_less_FullTime_Uninsured_Percent,na.rm=TRUE),
+    median=median(Worked_less_FullTime_Uninsured_Percent,na.rm=TRUE),
+    quartRange=IQR(Worked_less_FullTime_Uninsured_Percent,na.rm=TRUE),
+    min=min(Worked_less_FullTime_Uninsured_Percent,na.rm=TRUE),
+    max=max(Worked_less_FullTime_Uninsured_Percent,na.rm=TRUE)
+)%>%
+kable(align = "ccccccccccc",caption = "Worked Less Than FullTime Uninsured Percent Total Summary ")
+```
+
+```{r}
+Dataset_V3%>%
+  group_by(rank80)%>%
+  summarise(
+    n=n(),
+    mean=mean(Worked_less_FullTime_Uninsured_Percent,na.rm=TRUE),
+    standard_deviation=sd(Worked_less_FullTime_Uninsured_Percent,na.rm=TRUE),
+    median=median(Worked_less_FullTime_Uninsured_Percent,na.rm=TRUE),
+    quartRange=IQR(Worked_less_FullTime_Uninsured_Percent,na.rm=TRUE),
+    min=min(Worked_less_FullTime_Uninsured_Percent,na.rm=TRUE),
+    max=max(Worked_less_FullTime_Uninsured_Percent,na.rm=TRUE)
+)%>%
+kable(align = "ccccccccccc",caption = "Worked Less Than FullTime Uninsured Percent Summary ")
+```
+
+Extract the values of the potential outliers
+
+```{r}
+boxplot.stats(Dataset_V3$Worked_less_FullTime_Uninsured_Percent)$out
+```
+There are three outliers in the risk group.
+
+```{r}
+png("Worked_less_FullTime_Uninsured_Percent scatter plot.png", width = 220, height = 190, units='mm', res = 300)
+  plot(1:10, 1:10, mar=c(3.5,0,3,0))
+p1<-ggplot(data=Dataset_V3%>% dplyr::filter(!is.na(Worked_less_FullTime_Uninsured_Percent)), mapping = aes(sample = Worked_less_FullTime_Uninsured_Percent)) +
+  stat_qq_band(alpha=0.5,conf=0.95,qtype = 1,bandType ="boot" ) +
+  stat_qq_line(identity = TRUE) +
+  stat_qq_point(col="Orange") +
+  ggtitle("Uninsured Percent of Worked Less than \n Full-Time in Both Groups")
+  labs(x = "Theoretical Quantiles", y = "Sample Quantitles")+theme_bw()
+
+
+p2<-ggplot(data=Dataset_V3%>% dplyr::filter(!is.na(Worked_less_FullTime_Uninsured_Percent)), mapping = aes(sample = Worked_less_FullTime_Uninsured_Percent,color=rank80,fill=rank80)) +
+  stat_qq_band(alpha=0.5,conf=0.95,qtype = 1,bandType ="boot" ) +
+  stat_qq_line(identity = TRUE) +
+  stat_qq_point(col="black") +
+  facet_wrap(~rank80,scales="free")+
+  ggtitle("Uninsured Percent of Worked Less than \n Full-Time in Group 0 and Group 1")+
+  labs(x = "Theoretical Quantiles", y = "Sample Quantitles")+theme_bw()
+
+ggarrange(p1, p2, 
+          labels = c("A", "B"),
+          ncol = 2, nrow = 1)
+dev.off()
+```
+
+
+```{r}
+ggplot(data=Dataset_V3%>% dplyr::filter(!is.na(Worked_less_FullTime_Uninsured_Percent)), mapping = aes(sample = Worked_less_FullTime_Uninsured_Percent,color=rank80,fill=rank80)) +
+  stat_qq_band(alpha=0.5,conf=0.95,qtype = 1,bandType ="boot" ) +
+  stat_qq_line(identity = TRUE) +
+  stat_qq_point(col="black") +
+  facet_wrap(~rank80,scales="free")+
+  labs(x = "Theoretical Quantiles", y = "Sample Quantitles")+theme_bw()
+
+```
+
+### 1.20 Did not work Uninsured Percent
+
+```{r}
+summary(Dataset_V3$Did_not_work_Uninsured_Percent)
+```
+There are no missing values in Did_not_work_Uninsured_Percent.
+
+Use histogram to See the frequency of the Did_not_work_Uninsured_Percent
+
+```{r}
+ggplot(Dataset_V3%>% dplyr::filter(!is.na(Did_not_work_Uninsured_Percent)),
+       aes(x=Did_not_work_Uninsured_Percent))+
+  geom_histogram(fill="light blue",color='black',bins=10)+
+  xlab("Did_not_work_Uninsured_Percent")+
+  ylab("Count")
+#geom_histogram() ) display the counts with bars
+# 10 bins
+```
+
+Use boxplot to show the distribution of the Did_not_work_Uninsured_Percent from the perspectives group 1 and group 0
+
+```{r}
+ggplot(Dataset_V3%>% dplyr::filter(!is.na(Did_not_work_Uninsured_Percent)),aes(x=rank80,y=Did_not_work_Uninsured_Percent, fill=rank80))+
+  stat_boxplot(geom="errorbar")+
+  geom_boxplot(fill="light blue")+
+  ggtitle("Boxplot of Did Not Work Uninsured Percent")+
+  theme_bw()
+
+```
+```{r}
+Dataset_V3%>%
+  
+  summarise(
+    n=n(),
+    mean=mean(Did_not_work_Uninsured_Percent,na.rm=TRUE),
+    standard_deviation=sd(Did_not_work_Uninsured_Percent,na.rm=TRUE),
+    median=median(Did_not_work_Uninsured_Percent,na.rm=TRUE),
+    quartRange=IQR(Did_not_work_Uninsured_Percent,na.rm=TRUE),
+    min=min(Did_not_work_Uninsured_Percent,na.rm=TRUE),
+    max=max(Did_not_work_Uninsured_Percent,na.rm=TRUE)
+)%>%
+kable(align = "ccccccccccc",caption = "Did Not Work Uninsured Percent Total Summary")
+```
+
+```{r}
+Dataset_V3%>%
+  group_by(rank80)%>%
+  summarise(
+    n=n(),
+    mean=mean(Did_not_work_Uninsured_Percent,na.rm=TRUE),
+    standard_deviation=sd(Did_not_work_Uninsured_Percent,na.rm=TRUE),
+    median=median(Did_not_work_Uninsured_Percent,na.rm=TRUE),
+    quartRange=IQR(Did_not_work_Uninsured_Percent,na.rm=TRUE),
+    min=min(Did_not_work_Uninsured_Percent,na.rm=TRUE),
+    max=max(Did_not_work_Uninsured_Percent,na.rm=TRUE)
+)%>%
+kable(align = "ccccccccccc",caption = "Did Not Work Uninsured Percent Summary")
+```
+
+Extract the values of the potential outliers
+
+```{r}
+boxplot.stats(Dataset_V3$Did_not_work_Uninsured_Percent)$out
+```
+There are 2 outliers. One is in the risk group and the other one is in the safe group.
+
+```{r}
+png("Did_not_work_Uninsured_Percent scatter plot.png", width = 220, height = 190, units='mm', res = 300)
+  plot(1:10, 1:10, mar=c(3.5,0,3,0))
+p1<-ggplot(data=Dataset_V3%>% dplyr::filter(!is.na(Did_not_work_Uninsured_Percent)), mapping = aes(sample = Did_not_work_Uninsured_Percent)) +
+  stat_qq_band(alpha=0.5,conf=0.95,qtype = 1,bandType ="boot" ) +
+  stat_qq_line(identity = TRUE) +
+  stat_qq_point(col="Orange") +
+  ggtitle("Uninsured Percent of Did Not Work \n in Both Groups")
+  labs(x = "Theoretical Quantiles", y = "Sample Quantitles")+theme_bw()
+
+
+p2<-ggplot(data=Dataset_V3%>% dplyr::filter(!is.na(Did_not_work_Uninsured_Percent)), mapping = aes(sample = Did_not_work_Uninsured_Percent,color=rank80,fill=rank80)) +
+  stat_qq_band(alpha=0.5,conf=0.95,qtype = 1,bandType ="boot" ) +
+  stat_qq_line(identity = TRUE) +
+  stat_qq_point(col="black") +
+  facet_wrap(~rank80,scales="free")+
+  ggtitle("Uninsured Percent of Did Not Work \n in Group 0 and Group 1")+
+  labs(x = "Theoretical Quantiles", y = "Sample Quantitles")+theme_bw()
+
+ggarrange(p1, p2, 
+          labels = c("A", "B"),
+          ncol = 2, nrow = 1)
+dev.off()
+```
+
+
+
+```{r}
+ggplot(data=Dataset_V3%>% dplyr::filter(!is.na(Did_not_work_Uninsured_Percent)), mapping = aes(sample = Did_not_work_Uninsured_Percent,color=rank80,fill=rank80)) +
+  stat_qq_band(alpha=0.5,conf=0.95,qtype = 1,bandType ="boot" ) +
+  stat_qq_line(identity = TRUE) +
+  stat_qq_point(col="black") +
+  facet_wrap(~rank80,scales="free")+
+  labs(x = "Theoretical Quantiles", y = "Sample Quantitles")+theme_bw()
+
+```
+
+
+### 1.21 Below 138 percent of the poverty threshold Uninsured Percent
+
+```{r}
+summary(Dataset_V3$Below_138_poverty_Uninsured_Percent)
+```
+There are no missing values in Below_138_poverty_Uninsured_Percent.
+
+Use histogram to See the frequency of the Below_138_poverty_Uninsured_Percent
+
+```{r}
+ggplot(Dataset_V3%>% dplyr::filter(!is.na(Below_138_poverty_Uninsured_Percent)),
+       aes(x=Below_138_poverty_Uninsured_Percent))+
+  geom_histogram(fill="light blue",color='black',bins=10)+
+  xlab("Below_138_poverty_Uninsured_Percent")+
+  ylab("Count")
+#geom_histogram() ) display the counts with bars
+# 10 bins
+```
+
+Use boxplot to show the distribution of the Below_138_poverty_Uninsured_Percent from the perspectives group 1 and group 0
+
+```{r}
+ggplot(Dataset_V3%>% dplyr::filter(!is.na(Below_138_poverty_Uninsured_Percent)),aes(x=rank80,y=Below_138_poverty_Uninsured_Percent, fill=rank80))+
+  stat_boxplot(geom="errorbar")+
+  geom_boxplot(fill="light blue")+
+  ggtitle("Boxplot of Below 138 Poverty Uninsured Percent")+
+  theme_bw()
+
+```
+```{r}
+Dataset_V3%>%
+  
+  summarise(
+    n=n(),
+    mean=mean(Below_138_poverty_Uninsured_Percent,na.rm=TRUE),
+    standard_deviation=sd(Below_138_poverty_Uninsured_Percent,na.rm=TRUE),
+    median=median(Below_138_poverty_Uninsured_Percent,na.rm=TRUE),
+    quartRange=IQR(Below_138_poverty_Uninsured_Percent,na.rm=TRUE),
+    min=min(Below_138_poverty_Uninsured_Percent,na.rm=TRUE),
+    max=max(Below_138_poverty_Uninsured_Percent,na.rm=TRUE)
+)%>%
+kable(align = "ccccccccccc",caption = "Below 138 Poverty Uninsured Percent Total Summary ")
+```
+
+```{r}
+Dataset_V3%>%
+  group_by(rank80)%>%
+  summarise(
+    n=n(),
+    mean=mean(Below_138_poverty_Uninsured_Percent,na.rm=TRUE),
+    standard_deviation=sd(Below_138_poverty_Uninsured_Percent,na.rm=TRUE),
+    median=median(Below_138_poverty_Uninsured_Percent,na.rm=TRUE),
+    quartRange=IQR(Below_138_poverty_Uninsured_Percent,na.rm=TRUE),
+    min=min(Below_138_poverty_Uninsured_Percent,na.rm=TRUE),
+    max=max(Below_138_poverty_Uninsured_Percent,na.rm=TRUE)
+)%>%
+kable(align = "ccccccccccc",caption = "Below 138 Poverty Uninsured Percent Summary ")
+```
+
+Extract the values of the potential outliers
+
+```{r}
+boxplot.stats(Dataset_V3$Below_138_poverty_Uninsured_Percent)$out
+```
+There is 1 outliers in the safe group.
+
+```{r}
+png("Below_138_poverty_Uninsured_Percent scatter plot.png", width = 220, height = 190, units='mm', res = 300)
+  plot(1:10, 1:10, mar=c(3.5,0,3,0))
+p1<-ggplot(data=Dataset_V3%>% dplyr::filter(!is.na(Below_138_poverty_Uninsured_Percent)), mapping = aes(sample = Below_138_poverty_Uninsured_Percent)) +
+  stat_qq_band(alpha=0.5,conf=0.95,qtype = 1,bandType ="boot" ) +
+  stat_qq_line(identity = TRUE) +
+  stat_qq_point(col="Orange") +
+  ggtitle("Uninsured Percent of Below 138 Poverty \n in Both Groups")
+  labs(x = "Theoretical Quantiles", y = "Sample Quantitles")+theme_bw()
+
+
+p2<-ggplot(data=Dataset_V3%>% dplyr::filter(!is.na(Below_138_poverty_Uninsured_Percent)), mapping = aes(sample = Below_138_poverty_Uninsured_Percent,color=rank80,fill=rank80)) +
+  stat_qq_band(alpha=0.5,conf=0.95,qtype = 1,bandType ="boot" ) +
+  stat_qq_line(identity = TRUE) +
+  stat_qq_point(col="black") +
+  facet_wrap(~rank80,scales="free")+
+  ggtitle("Uninsured Percent of Below 138 Poverty \n in Group 0 and Group 1")+
+  labs(x = "Theoretical Quantiles", y = "Sample Quantitles")+theme_bw()
+
+ggarrange(p1, p2, 
+          labels = c("A", "B"),
+          ncol = 2, nrow = 1)
+dev.off()
+```
+
+
+```{r}
+ggplot(data=Dataset_V3%>% dplyr::filter(!is.na(Below_138_poverty_Uninsured_Percent)), mapping = aes(sample = Below_138_poverty_Uninsured_Percent,color=rank80,fill=rank80)) +
+  stat_qq_band(alpha=0.5,conf=0.95,qtype = 1,bandType ="boot" ) +
+  stat_qq_line(identity = TRUE) +
+  stat_qq_point(col="black") +
+  facet_wrap(~rank80,scales="free")+
+  labs(x = "Theoretical Quantiles", y = "Sample Quantitles")+theme_bw()
+
+```
+
+### 1.22 138 to 399 percent of the poverty threshold Uninsured Percent
+
+```{r}
+summary(Dataset_V3$From_138_to_399_poverty_Uninsured_Percent)
+```
+There are no missing values in From_138_to_399_poverty_Uninsured_Percent.
+
+
+Use histogram to See the frequency of the From_138_to_399_poverty_Uninsured_Percent
+
+```{r}
+ggplot(Dataset_V3%>% dplyr::filter(!is.na(From_138_to_399_poverty_Uninsured_Percent)),
+       aes(x=From_138_to_399_poverty_Uninsured_Percent))+
+  geom_histogram(fill="light blue",color='black',bins=10)+
+  xlab("From_138_to_399_poverty_Uninsured_Percent")+
+  ylab("Count")
+#geom_histogram() ) display the counts with bars
+# 10 bins
+```
+
+Use boxplot to show the distribution of the From_138_to_399_poverty_Uninsured_Percent from the perspectives group 1 and group 0
+
+```{r}
+ggplot(Dataset_V3%>% dplyr::filter(!is.na(From_138_to_399_poverty_Uninsured_Percent)),aes(x=rank80,y=From_138_to_399_poverty_Uninsured_Percent, fill=rank80))+
+  stat_boxplot(geom="errorbar")+
+  geom_boxplot(fill="light blue")+
+  ggtitle("Boxplot of From 138 to 399 Poverty Uninsured Percent")+
+  theme_bw()
+
+```
+```{r}
+Dataset_V3%>%
+  
+  summarise(
+    n=n(),
+    mean=mean(From_138_to_399_poverty_Uninsured_Percent,na.rm=TRUE),
+    standard_deviation=sd(From_138_to_399_poverty_Uninsured_Percent,na.rm=TRUE),
+    median=median(From_138_to_399_poverty_Uninsured_Percent,na.rm=TRUE),
+    quartRange=IQR(From_138_to_399_poverty_Uninsured_Percent,na.rm=TRUE),
+    min=min(From_138_to_399_poverty_Uninsured_Percent,na.rm=TRUE),
+    max=max(From_138_to_399_poverty_Uninsured_Percent,na.rm=TRUE)
+)%>%
+kable(align = "ccccccccccc",caption = "From 138 to 399 Poverty Uninsured Percent Total Summary ")
+```
+```{r}
+Dataset_V3%>%
+  group_by(rank80)%>%
+  summarise(
+    n=n(),
+    mean=mean(From_138_to_399_poverty_Uninsured_Percent,na.rm=TRUE),
+    standard_deviation=sd(From_138_to_399_poverty_Uninsured_Percent,na.rm=TRUE),
+    median=median(From_138_to_399_poverty_Uninsured_Percent,na.rm=TRUE),
+    quartRange=IQR(From_138_to_399_poverty_Uninsured_Percent,na.rm=TRUE),
+    min=min(From_138_to_399_poverty_Uninsured_Percent,na.rm=TRUE),
+    max=max(From_138_to_399_poverty_Uninsured_Percent,na.rm=TRUE)
+)%>%
+kable(align = "ccccccccccc",caption = "From 138 to 399 Poverty Uninsured Percent Summary ")
+```
+Extract the values of the potential outliers
+
+```{r}
+boxplot.stats(Dataset_V3$From_138_to_399_poverty_Uninsured_Percent)$out
+```
+There are 6 outliers in the risk group.
+
+
+```{r}
+png("From_138_to_399_poverty_Uninsured_Percent scatter plot.png", width = 220, height = 190, units='mm', res = 300)
+  plot(1:10, 1:10, mar=c(3.5,0,3,0))
+p1<-ggplot(data=Dataset_V3%>% dplyr::filter(!is.na(From_138_to_399_poverty_Uninsured_Percent)), mapping = aes(sample = From_138_to_399_poverty_Uninsured_Percent)) +
+  stat_qq_band(alpha=0.5,conf=0.95,qtype = 1,bandType ="boot" ) +
+  stat_qq_line(identity = TRUE) +
+  stat_qq_point(col="Orange") +
+  ggtitle("Uninsured Percent of From 138 to 399 \n Poverty in Both Groups")
+  labs(x = "Theoretical Quantiles", y = "Sample Quantitles")+theme_bw()
+
+
+p2<-ggplot(data=Dataset_V3%>% dplyr::filter(!is.na(From_138_to_399_poverty_Uninsured_Percent)), mapping = aes(sample = From_138_to_399_poverty_Uninsured_Percent,color=rank80,fill=rank80)) +
+  stat_qq_band(alpha=0.5,conf=0.95,qtype = 1,bandType ="boot" ) +
+  stat_qq_line(identity = TRUE) +
+  stat_qq_point(col="black") +
+  facet_wrap(~rank80,scales="free")+
+  ggtitle("Uninsured Percent of From 138 to 399 \n Poverty in Group 0 and Group 1")+
+  labs(x = "Theoretical Quantiles", y = "Sample Quantitles")+theme_bw()
+
+ggarrange(p1, p2, 
+          labels = c("A", "B"),
+          ncol = 2, nrow = 1)
+dev.off()
+```
+
+
+```{r}
+ggplot(data=Dataset_V3%>% dplyr::filter(!is.na(From_138_to_399_poverty_Uninsured_Percent)), mapping = aes(sample = From_138_to_399_poverty_Uninsured_Percent,color=rank80,fill=rank80)) +
+  stat_qq_band(alpha=0.5,conf=0.95,qtype = 1,bandType ="boot" ) +
+  stat_qq_line(identity = TRUE) +
+  stat_qq_point(col="black") +
+  facet_wrap(~rank80,scales="free")+
+  labs(x = "Theoretical Quantiles", y = "Sample Quantitles")+theme_bw()
+
+```
+
+### 1.23 At or above 400 percent of the poverty threshold Uninsured Percent
+
+```{r}
+summary(Dataset_V3$At_or_above_400_Poverty_Uninsured_Percent)
+```
+There are no missing values in At_or_above_400_Poverty_Uninsured_Percent.
+
+
+Use histogram to See the frequency of the At_or_above_400_Poverty_Uninsured_Percent
+
+```{r}
+ggplot(Dataset_V3%>% dplyr::filter(!is.na(At_or_above_400_Poverty_Uninsured_Percent)),
+       aes(x=At_or_above_400_Poverty_Uninsured_Percent))+
+  geom_histogram(fill="light blue",color='black',bins=10)+
+  xlab("At_or_above_400_Poverty_Uninsured_Percent")+
+  ylab("Count")
+#geom_histogram() ) display the counts with bars
+# 10 bins
+```
+
+Use boxplot to show the distribution of the At_or_above_400_Poverty_Uninsured_Percent from the perspectives group 1 and group 0
+
+```{r}
+ggplot(Dataset_V3%>% dplyr::filter(!is.na(At_or_above_400_Poverty_Uninsured_Percent)),aes(x=rank80,y=At_or_above_400_Poverty_Uninsured_Percent, fill=rank80))+
+  stat_boxplot(geom="errorbar")+
+  geom_boxplot(fill="light blue")+
+  ggtitle("Boxplot of at or above 400 Poverty Uninsured Percent")+
+  theme_bw()
+
+```
+
+```{r}
+Dataset_V3%>%
+  
+  summarise(
+    n=n(),
+    mean=mean(At_or_above_400_Poverty_Uninsured_Percent,na.rm=TRUE),
+    standard_deviation=sd(At_or_above_400_Poverty_Uninsured_Percent,na.rm=TRUE),
+    median=median(At_or_above_400_Poverty_Uninsured_Percent,na.rm=TRUE),
+    quartRange=IQR(At_or_above_400_Poverty_Uninsured_Percent,na.rm=TRUE),
+    min=min(At_or_above_400_Poverty_Uninsured_Percent,na.rm=TRUE),
+    max=max(At_or_above_400_Poverty_Uninsured_Percent,na.rm=TRUE)
+)%>%
+kable(align = "ccccccccccc",caption = "At or Above 400 Poverty Uninsured Percent Total Summary ")
+```
+
+```{r}
+Dataset_V3%>%
+  group_by(rank80)%>%
+  summarise(
+    n=n(),
+    mean=mean(At_or_above_400_Poverty_Uninsured_Percent,na.rm=TRUE),
+    standard_deviation=sd(At_or_above_400_Poverty_Uninsured_Percent,na.rm=TRUE),
+    median=median(At_or_above_400_Poverty_Uninsured_Percent,na.rm=TRUE),
+    quartRange=IQR(At_or_above_400_Poverty_Uninsured_Percent,na.rm=TRUE),
+    min=min(At_or_above_400_Poverty_Uninsured_Percent,na.rm=TRUE),
+    max=max(At_or_above_400_Poverty_Uninsured_Percent,na.rm=TRUE)
+)%>%
+kable(align = "ccccccccccc",caption = "At or Above 400 Poverty Uninsured Percent Summary ")
+```
+Extract the values of the potential outliers
+
+```{r}
+boxplot.stats(Dataset_V3$At_or_above_400_Poverty_Uninsured_Percent)$out
+```
+
+There are 14 outliers in the both group.
+
+```{r}
+png("At_or_above_400_Poverty_Uninsured_Percent scatter plot.png", width = 220, height = 190, units='mm', res = 300)
+  plot(1:10, 1:10, mar=c(3.5,0,3,0))
+p1<-ggplot(data=Dataset_V3%>% dplyr::filter(!is.na(At_or_above_400_Poverty_Uninsured_Percent)), mapping = aes(sample = At_or_above_400_Poverty_Uninsured_Percent)) +
+  stat_qq_band(alpha=0.5,conf=0.95,qtype = 1,bandType ="boot" ) +
+  stat_qq_line(identity = TRUE) +
+  stat_qq_point(col="Orange") +
+  ggtitle("Uninsured Percent of At or above 400 Poverty \n in Both Groups")
+  labs(x = "Theoretical Quantiles", y = "Sample Quantitles")+theme_bw()
+
+
+p2<-ggplot(data=Dataset_V3%>% dplyr::filter(!is.na(At_or_above_400_Poverty_Uninsured_Percent)), mapping = aes(sample = At_or_above_400_Poverty_Uninsured_Percent,color=rank80,fill=rank80)) +
+  stat_qq_band(alpha=0.5,conf=0.95,qtype = 1,bandType ="boot" ) +
+  stat_qq_line(identity = TRUE) +
+  stat_qq_point(col="black") +
+  facet_wrap(~rank80,scales="free")+
+  ggtitle("Uninsured Percent of At or above 400 Poverty \n in Group 0 and Group 1")+
+  labs(x = "Theoretical Quantiles", y = "Sample Quantitles")+theme_bw()
+
+ggarrange(p1, p2, 
+          labels = c("A", "B"),
+          ncol = 2, nrow = 1)
+dev.off()
+```
+
+
+```{r}
+ggplot(data=Dataset_V3%>% dplyr::filter(!is.na(At_or_above_400_Poverty_Uninsured_Percent)), mapping = aes(sample = At_or_above_400_Poverty_Uninsured_Percent,color=rank80,fill=rank80)) +
+  stat_qq_band(alpha=0.5,conf=0.95,qtype = 1,bandType ="boot" ) +
+  stat_qq_line(identity = TRUE) +
+  stat_qq_point(col="black") +
+  facet_wrap(~rank80,scales="free")+
+  labs(x = "Theoretical Quantiles", y = "Sample Quantitles")+theme_bw()
+
+```
+
+### 1.24 Persons who speak English less than well Percent 
+
+```{r}
+summary(Dataset_V3$Persons_who_speak_English_less_than_well_Percent)
+```
+There are no missing values in Persons_who_speak_English_less_than_well_Percent.
+
+
+Use histogram to See the frequency of the Persons_who_speak_English_less_than_well_Percent
+
+```{r}
+ggplot(Dataset_V3%>% 
+         dplyr::filter(!is.na(Persons_who_speak_English_less_than_well_Percent)),
+       aes(x=Persons_who_speak_English_less_than_well_Percent))+
+  geom_histogram(fill="light blue",color='black',bins=10)+
+  xlab("Persons who speak English less than well Percent")+
+  ylab("Count")
+#geom_histogram() ) display the counts with bars
+# 10 bins
+```
+
+Use boxplot to show the distribution of the Persons_who_speak_English_less_than_well_Percent from the perspectives group 1 and group 0
+
+```{r}
+ggplot(Dataset_V3%>% dplyr::filter(!is.na(Persons_who_speak_English_less_than_well_Percent)),aes(x=rank80,y=Persons_who_speak_English_less_than_well_Percent, fill=rank80))+
+  stat_boxplot(geom="errorbar")+
+  geom_boxplot(fill="light blue")+
+  ggtitle("Boxplot of Persons Who Speak English Less Than Well Percent")+
+  theme_bw()
+
+```
+
+```{r}
+Dataset_V3%>%
+  
+  summarise(
+    n=n(),
+    mean=mean(Persons_who_speak_English_less_than_well_Percent,na.rm=TRUE),
+    standard_deviation=sd(Persons_who_speak_English_less_than_well_Percent,na.rm=TRUE),
+    median=median(Persons_who_speak_English_less_than_well_Percent,na.rm=TRUE),
+    quartRange=IQR(Persons_who_speak_English_less_than_well_Percent,na.rm=TRUE),
+    min=min(Persons_who_speak_English_less_than_well_Percent,na.rm=TRUE),
+    max=max(Persons_who_speak_English_less_than_well_Percent,na.rm=TRUE)
+)%>%
+kable(align = "ccccccccccc",caption = "Persons who speak English less than well Percent Total Summary ")
+```
+
+```{r}
+Dataset_V3%>%
+  group_by(rank80)%>%
+  summarise(
+    n=n(),
+    mean=mean(Persons_who_speak_English_less_than_well_Percent,na.rm=TRUE),
+    standard_deviation=sd(Persons_who_speak_English_less_than_well_Percent,na.rm=TRUE),
+    median=median(Persons_who_speak_English_less_than_well_Percent,na.rm=TRUE),
+    quartRange=IQR(Persons_who_speak_English_less_than_well_Percent,na.rm=TRUE),
+    min=min(Persons_who_speak_English_less_than_well_Percent,na.rm=TRUE),
+    max=max(Persons_who_speak_English_less_than_well_Percent,na.rm=TRUE)
+)%>%
+kable(align = "ccccccccccc",caption = "Persons Who Speak English Less Than Well Percent Summary ")
+```
+
+Extract the values of the potential outliers
+
+```{r}
+boxplot.stats(Dataset_V3$Persons_who_speak_English_less_than_well_Percent)$out
+```
+There are 10 outliers in the both group.
+
+```{r}
+png("Persons_who_speak_English_less_than_well_Percent scatter plot.png", width = 220, height = 190, units='mm', res = 300)
+  plot(1:10, 1:10, mar=c(3.5,0,3,0))
+p1<-ggplot(data=Dataset_V3%>% dplyr::filter(!is.na(Persons_who_speak_English_less_than_well_Percent)), mapping = aes(sample = Persons_who_speak_English_less_than_well_Percent)) +
+  stat_qq_band(alpha=0.5,conf=0.95,qtype = 1,bandType ="boot" ) +
+  stat_qq_line(identity = TRUE) +
+  stat_qq_point(col="Orange") +
+  ggtitle("Percent of Persons \n Who Speak English Less than Well \n in Both Groups")
+  labs(x = "Theoretical Quantiles", y = "Sample Quantitles")+theme_bw()
+
+
+p2<-ggplot(data=Dataset_V3%>% dplyr::filter(!is.na(Persons_who_speak_English_less_than_well_Percent)), mapping = aes(sample = Persons_who_speak_English_less_than_well_Percent,color=rank80,fill=rank80)) +
+  stat_qq_band(alpha=0.5,conf=0.95,qtype = 1,bandType ="boot" ) +
+  stat_qq_line(identity = TRUE) +
+  stat_qq_point(col="black") +
+  facet_wrap(~rank80,scales="free")+
+  ggtitle("Percent of Persons \n Who Speak English Less than Well \n in Group 0 and Group 1")+
+  labs(x = "Theoretical Quantiles", y = "Sample Quantitles")+theme_bw()
+
+ggarrange(p1, p2, 
+          labels = c("A", "B"),
+          ncol = 2, nrow = 1)
+dev.off()
+```
+
+
+```{r}
+ggplot(data=Dataset_V3%>% dplyr::filter(!is.na(Persons_who_speak_English_less_than_well_Percent)), mapping = aes(sample = Persons_who_speak_English_less_than_well_Percent,color=rank80,fill=rank80)) +
+  stat_qq_band(alpha=0.5,conf=0.95,qtype = 1,bandType ="boot" ) +
+  stat_qq_line(identity = TRUE) +
+  stat_qq_point(col="black") +
+  facet_wrap(~rank80,scales="free")+
+  labs(x = "Theoretical Quantiles", y = "Sample Quantitles")+theme_bw()
+
+```
+
+## 2. Descriptive Statistics of dataset with the columns from census about sex
+
+### 2.1 import male uninsured percent and Descriptive Statistics of male uninsured percent
+
+```{r}
+Male_Uninsured_Percent <- get_acs(geography="tract", variables = "S2701_C05_014", year = 2019, state = "UT", county = "Salt Lake", geometry = FALSE)
+Male_Uninsured_Percent
+#write.csv(Race_Hispanic_or_Latino_Uninsured_Percent, #'Race_Hispanic_or_Latino_Uninsured_Percent.csv', row.names = FALSE)
+#212*5
+```
+```{r}
+colnames(Male_Uninsured_Percent)[4] <- "Male_Uninsured_Percent"
+Male_Uninsured_Percent
+```
+```{r}
+summary(Male_Uninsured_Percent$GEOID)
+```
+There is no missing values in GEOID.
+
+```{r}
+summary(Male_Uninsured_Percent$Male_Uninsured_Percent)
+```
+There are two missing values in Male_Uninsured_Percent.
+
+Use histogram to See the frequency of the Male_Uninsured_Percent
+
+```{r}
+ggplot(Male_Uninsured_Percent%>% dplyr::filter(!is.na(Male_Uninsured_Percent)),
+       aes(x=Male_Uninsured_Percent))+
+  geom_histogram(fill="light blue",color='black',bins=10)+
+  xlab("Male_Uninsured_Percent")+
+  ylab("Count")
+#geom_histogram() ) display the counts with bars
+# 10 bins
+```
+Find the rows with missing values
+```{r}
+Male_Uninsured_Percent%>%
+  dplyr::filter(is.na(Male_Uninsured_Percent))%>%
+  dplyr::select(GEOID,Male_Uninsured_Percent)
+```
+We miss GEOID (49035112818 and 49035980000) Race_Hispanic_or_Latino_Uninsured_Percent information (the same GEOID as above).
+
+Delete the rows from GEOID=="49035112818" and GEOID=="49035980000" because we miss all of the information from these two tracts when we do census data analysis.
+```{r}
+Male_Uninsured_Percent<-Male_Uninsured_Percent %>% 
+  dplyr::filter(GEOID!=49035112818)%>% 
+  dplyr::filter(GEOID!=49035980000)
+
+#210 rows
+
+```
+
+```{r}
+Male_Uninsured_Percent <-  Male_Uninsured_Percent%>%
+  dplyr::select(GEOID,Male_Uninsured_Percent)
+
+Male_Uninsured_Percent
+ 
+#write.csv(AGE_19_to_64_Uninsured_Percent_withNA,'AGE_19_to_64_Uninsu#red_Percent_withNA.csv', row.names = FALSE)
+```
+```{r}
+# merge two data frames by ID
+Total_Male_Uninsured_Percent <- merge(Dataset_V3, Male_Uninsured_Percent,by="GEOID")
+Total_Male_Uninsured_Percent <-Total_Male_Uninsured_Percent %>% relocate(Male_Uninsured_Percent, .after = rank80)
+Total_Male_Uninsured_Percent
+#write.csv(Total_AGE_Under_19_AGE_19_to_64,'Total_AGE_Under_19_AGE_19#_to_64.csv', row.names = FALSE)
+```
+
+
+Use boxplot to show the distribution of the Male_Uninsured_Percent from the perspectives group 1 and group 0
+
+```{r}
+ggplot(Total_Male_Uninsured_Percent%>% dplyr::filter(!is.na(Male_Uninsured_Percent)),aes(x=rank80,y=Male_Uninsured_Percent, fill=rank80))+
+  stat_boxplot(geom="errorbar")+
+  geom_boxplot(fill="light blue")+
+  ggtitle("Boxplot of Male Uninsured Percent")+
+  theme_bw()
+
+```
+```{r}
+Total_Male_Uninsured_Percent%>%
+  
+  summarise(
+    n=n(),
+    mean=mean(Male_Uninsured_Percent,na.rm=TRUE),
+    standard_deviation=sd(Male_Uninsured_Percent,na.rm=TRUE),
+    median=median(Male_Uninsured_Percent,na.rm=TRUE),
+    quartRange=IQR(Male_Uninsured_Percent,na.rm=TRUE),
+    min=min(Male_Uninsured_Percent,na.rm=TRUE),
+    max=max(Male_Uninsured_Percent,na.rm=TRUE)
+)%>%
+kable(align = "ccccccccccc",caption = "Male Uninsured Percent Total Summary ")
+```
+```{r}
+Total_Male_Uninsured_Percent%>%
+  group_by(rank80)%>%
+  summarise(
+    n=n(),
+    mean=mean(Male_Uninsured_Percent,na.rm=TRUE),
+    standard_deviation=sd(Male_Uninsured_Percent,na.rm=TRUE),
+    median=median(Male_Uninsured_Percent,na.rm=TRUE),
+    quartRange=IQR(Male_Uninsured_Percent,na.rm=TRUE),
+    min=min(Male_Uninsured_Percent,na.rm=TRUE),
+    max=max(Male_Uninsured_Percent,na.rm=TRUE)
+)%>%
+kable(align = "ccccccccccc",caption = "Male Uninsured Percent Summary ")
+```
+Extract the values of the potential outliers
+
+```{r}
+boxplot.stats(Total_Male_Uninsured_Percent$Male_Uninsured_Percent)$out
+```
+There are 5 outliers in the risk group.
+
+```{r}
+png("Male_Uninsured_Percent scatter plot.png", width = 220, height = 190, units='mm', res = 300)
+  plot(1:10, 1:10, mar=c(3.5,0,3,0))
+p1<-ggplot(data=Total_Male_Uninsured_Percent%>% dplyr::filter(!is.na(Male_Uninsured_Percent)), mapping = aes(sample = Male_Uninsured_Percent)) +
+  stat_qq_band(alpha=0.5,conf=0.95,qtype = 1,bandType ="boot" ) +
+  stat_qq_line(identity = TRUE) +
+  stat_qq_point(col="Orange") +
+  ggtitle("Uninsured Percent of Male \n in Both Groups")
+  labs(x = "Theoretical Quantiles", y = "Sample Quantitles")+theme_bw()
+
+
+p2<-ggplot(data=Total_Male_Uninsured_Percent%>% dplyr::filter(!is.na(Male_Uninsured_Percent)), mapping = aes(sample = Male_Uninsured_Percent,color=rank80,fill=rank80)) +
+  stat_qq_band(alpha=0.5,conf=0.95,qtype = 1,bandType ="boot" ) +
+  stat_qq_line(identity = TRUE) +
+  stat_qq_point(col="black") +
+  facet_wrap(~rank80,scales="free")+
+  ggtitle("Uninsured Percent of Male \n in Group 0 and Group 1")+
+  labs(x = "Theoretical Quantiles", y = "Sample Quantitles")+theme_bw()
+
+ggarrange(p1, p2, 
+          labels = c("A", "B"),
+          ncol = 2, nrow = 1)
+dev.off()
+```
+
+
+```{r}
+ggplot(data=Total_Male_Uninsured_Percent%>% dplyr::filter(!is.na(Male_Uninsured_Percent)), mapping = aes(sample = Male_Uninsured_Percent,color=rank80,fill=rank80)) +
+  stat_qq_band(alpha=0.5,conf=0.95,qtype = 1,bandType ="boot" ) +
+  stat_qq_line(identity = TRUE) +
+  stat_qq_point(col="black") +
+  facet_wrap(~rank80,scales="free")+
+  labs(x = "Theoretical Quantiles", y = "Sample Quantitles")+theme_bw()
+
+```
+
+
+### 2.2 import female uninsured percent and descriptive statistics of female uninsured percent
+```{r}
+Female_Uninsured_Percent <- get_acs(geography="tract", variables = "S2701_C05_015", year = 2019, state = "UT", county = "Salt Lake", geometry = FALSE)
+Female_Uninsured_Percent
+#write.csv(Race_Hispanic_or_Latino_Uninsured_Percent, #'Race_Hispanic_or_Latino_Uninsured_Percent.csv', row.names = FALSE)
+#212*5
+```
+```{r}
+colnames(Female_Uninsured_Percent)[4] <- "Female_Uninsured_Percent"
+Female_Uninsured_Percent
+```
+```{r}
+summary(Female_Uninsured_Percent$GEOID)
+```
+There is no missing values in GEOID.
+
+```{r}
+summary(Female_Uninsured_Percent$Female_Uninsured_Percent)
+```
+There are two missing values in Female_Uninsured_Percent.
+
+Use histogram to See the frequency of the Female_Uninsured_Percent
+
+```{r}
+ggplot(Female_Uninsured_Percent%>% dplyr::filter(!is.na(Female_Uninsured_Percent)),
+       aes(x=Female_Uninsured_Percent))+
+  geom_histogram(fill="light blue",color='black',bins=10)+
+  xlab("Female_Uninsured_Percent")+
+  ylab("Count")
+#geom_histogram() ) display the counts with bars
+# 10 bins
+```
+Find the rows with missing values
+```{r}
+Female_Uninsured_Percent%>%
+  dplyr::filter(is.na(Female_Uninsured_Percent))%>%
+  dplyr::select(GEOID,Female_Uninsured_Percent)
+```
+We miss GEOID (49035112818 and 49035980000) Female_Uninsured_Percent information (the same GEOID as above).
+
+Delete the rows from GEOID=="49035112818" and GEOID=="49035980000" because we miss all of the information from these two tracts when we do census data analysis.
+```{r}
+Female_Uninsured_Percent<-Female_Uninsured_Percent %>% 
+  dplyr::filter(GEOID!=49035112818)%>% 
+  dplyr::filter(GEOID!=49035980000)
+
+#210 rows
+
+```
+
+```{r}
+Female_Uninsured_Percent <-  Female_Uninsured_Percent%>%
+  dplyr::select(GEOID,Female_Uninsured_Percent)
+
+Female_Uninsured_Percent
+ 
+#write.csv(AGE_19_to_64_Uninsured_Percent_withNA,'AGE_19_to_64_Uninsu#red_Percent_withNA.csv', row.names = FALSE)
+```
+```{r}
+# merge two data frames by ID
+Total_Male_Female_Uninsured_Percent <- merge(Female_Uninsured_Percent, Total_Male_Uninsured_Percent,by="GEOID")
+Total_Male_Female_Uninsured_Percent <-Total_Male_Female_Uninsured_Percent %>% relocate(Female_Uninsured_Percent, .after = rank80)
+Total_Male_Female_Uninsured_Percent
+write.csv(Total_Male_Female_Uninsured_Percent,'Dataset_V3_WithSexUninsuredPercent.csv', row.names = FALSE)
+#210*28
+```
+Use boxplot to show the distribution of the Female_Uninsured_Percent from the perspectives group 1 and group 0
+
+```{r}
+ggplot(Total_Male_Female_Uninsured_Percent%>% dplyr::filter(!is.na(Female_Uninsured_Percent)),aes(x=rank80,y=Female_Uninsured_Percent, fill=rank80))+
+  stat_boxplot(geom="errorbar")+
+  geom_boxplot(fill="light blue")+
+  ggtitle("Boxplot of Female Uninsured Percent")+
+  theme_bw()
+
+```
+```{r}
+Total_Male_Female_Uninsured_Percent%>%
+  
+  summarise(
+    n=n(),
+    mean=mean(Female_Uninsured_Percent,na.rm=TRUE),
+    standard_deviation=sd(Female_Uninsured_Percent,na.rm=TRUE),
+    median=median(Female_Uninsured_Percent,na.rm=TRUE),
+    quartRange=IQR(Female_Uninsured_Percent,na.rm=TRUE),
+    min=min(Female_Uninsured_Percent,na.rm=TRUE),
+    max=max(Female_Uninsured_Percent,na.rm=TRUE)
+)%>%
+kable(align = "ccccccccccc",caption = "Female Uninsured Percent Total Summary ")
+```
+
+```{r}
+Total_Male_Female_Uninsured_Percent%>%
+  group_by(rank80)%>%
+  summarise(
+    n=n(),
+    mean=mean(Female_Uninsured_Percent,na.rm=TRUE),
+    standard_deviation=sd(Female_Uninsured_Percent,na.rm=TRUE),
+    median=median(Female_Uninsured_Percent,na.rm=TRUE),
+    quartRange=IQR(Female_Uninsured_Percent,na.rm=TRUE),
+    min=min(Female_Uninsured_Percent,na.rm=TRUE),
+    max=max(Female_Uninsured_Percent,na.rm=TRUE)
+)%>%
+kable(align = "ccccccccccc",caption = "Female Uninsured Percent Summary ")
+```
+Extract the values of the potential outliers
+
+```{r}
+boxplot.stats(Total_Male_Female_Uninsured_Percent$Female_Uninsured_Percent)$out
+```
+There are 8 outliers in the risk group.
+
+```{r}
+png("Female_Uninsured_Percent scatter plot.png", width = 220, height = 190, units='mm', res = 300)
+  plot(1:10, 1:10, mar=c(3.5,0,3,0))
+p1<-ggplot(data=Total_Male_Female_Uninsured_Percent%>% dplyr::filter(!is.na(Female_Uninsured_Percent)), mapping = aes(sample = Female_Uninsured_Percent)) +
+  stat_qq_band(alpha=0.5,conf=0.95,qtype = 1,bandType ="boot" ) +
+  stat_qq_line(identity = TRUE) +
+  stat_qq_point(col="Orange") +
+  ggtitle("Uninsured Percent of Female \n in Both Groups")
+  labs(x = "Theoretical Quantiles", y = "Sample Quantitles")+theme_bw()
+
+
+p2<-ggplot(data=Total_Male_Female_Uninsured_Percent%>% dplyr::filter(!is.na(Female_Uninsured_Percent)), mapping = aes(sample = Female_Uninsured_Percent,color=rank80,fill=rank80)) +
+  stat_qq_band(alpha=0.5,conf=0.95,qtype = 1,bandType ="boot" ) +
+  stat_qq_line(identity = TRUE) +
+  stat_qq_point(col="black") +
+  facet_wrap(~rank80,scales="free")+
+  ggtitle("Uninsured Percent of Female \n in Group 0 and Group 1")+
+  labs(x = "Theoretical Quantiles", y = "Sample Quantitles")+theme_bw()
+
+ggarrange(p1, p2, 
+          labels = c("A", "B"),
+          ncol = 2, nrow = 1)
+dev.off()
+```
+
+
+
+
+```{r}
+ggplot(data=Total_Male_Female_Uninsured_Percent%>% dplyr::filter(!is.na(Female_Uninsured_Percent)), mapping = aes(sample = Female_Uninsured_Percent,color=rank80,fill=rank80)) +
+  stat_qq_band(alpha=0.5,conf=0.95,qtype = 1,bandType ="boot" ) +
+  stat_qq_line(identity = TRUE) +
+  stat_qq_point(col="black") +
+  facet_wrap(~rank80,scales="free")+
+  labs(x = "Theoretical Quantiles", y = "Sample Quantitles")+theme_bw()
+
+```
+
+
+## 3. Descriptive Statistics of dataset with the columns from ADI
+
+### 3.1 import ADI dataset and generate Dataset_V4
+
+```{r}
+ADI_Data<-read_csv("UT_2019_ADI_Census Block Group_v3.1.txt", col_types = "iicciii")#idcciic
+ADI_Data
+
+UT_2019_ADI <- read_csv("UT_2019_ADI_Census Block Group_v3.1.txt", 
+    col_types = cols(FIPS = col_character()))
+UT_2019_ADI
+
+
+```
+
+```{r}
+ADI_Data_SL<-ADI_Data %>%
+  dplyr::filter(str_detect(FIPS, "49035"))
+ADI_Data_SL
+
+write.csv(ADI_Data_SL, 'ADI_Data_SL.csv', row.names = FALSE)
+#The high is poor.
+```
+```{r}
+ADI_Data_SL<- transform(ADI_Data_SL, FIPS = as.numeric(FIPS))
+ADI_Data_SL
+```
+
+
+Our dataset GEOID has 11 digits. But ADI FIPS has 12 numbers. We will choose the first 11 digits as our GEOID.
+```{r}
+#names(ADI_Data_SL)[4] <- 'GEOID'
+
+ADI_Data_SL<-ADI_Data_SL %>% 
+  dplyr::mutate(GEOID = floor(FIPS/10))
+ADI_Data_SL <-ADI_Data_SL %>% relocate(GEOID, .after = FIPS)
+ADI_Data_SL
+```
+```{r}
+ADI_Data_SL<-ADI_Data_SL%>%
+  dplyr::select(GEOID,ADI_STATERNK)
+ADI_Data_SL
+```
+Delete the rows from GEOID=="49035112818" and GEOID=="49035980000" because we miss all of the information from these two tracts
+```{r}
+ADI_Data_SL<-ADI_Data_SL %>% 
+  dplyr::filter(GEOID!=49035112818)%>% 
+  dplyr::filter(GEOID!=49035980000)
+ADI_Data_SL
+
+```
+
+```{r}
+ADI_Data_SL<-ADI_Data_SL%>%
+  group_by(GEOID)%>%
+  dplyr::mutate(ADI = mean(ADI_STATERNK))
+  
+ADI_Data_SL
+write.csv(ADI_Data_SL, 'ADI_Data_SL_withAverages.csv', row.names = FALSE)
+```
+```{r}
+ADI_Data_SL <- ADI_Data_SL %>%
+  dplyr::select(-ADI_STATERNK)
+ADI_Data_SL
+
+```
+
+Remove duplicate rows
+```{r}
+ADI_Data_SL <- ADI_Data_SL %>% distinct()
+ADI_Data_SL
+```
+
+Merge ADI with Total_Male_Female_Uninsured_Percent and generae Dataset_V4.
+```{r}
+Dataset_V4 <- merge(Total_Male_Female_Uninsured_Percent, ADI_Data_SL,by="GEOID")
+Dataset_V4 <-Dataset_V4 %>% relocate(ADI, .after = rank80)
+
+Dataset_V4
+
+```
+
+```{r}
+#Dataset_V4%>% 
+quantile(Dataset_V4$ADI,probs = seq(0, 1, .2),na.rm= TRUE)
+```
+
+```{r}
+Dataset_V4<-Dataset_V4%>%
+  dplyr::mutate(ADI80 = ifelse(ADI > 7, "1", "0"))
+Dataset_V4 <-Dataset_V4 %>% relocate(ADI80, .after = ADI)
+write.csv(Dataset_V4, 'Dataset_V4.csv', row.names = FALSE)
+Dataset_V4
+
+```
+### 3.2 descriptive statistics of ADI
+```{r}
+summary(Dataset_V4$ADI)
+```
+There is 1 missing values in ADI.
+
+Use histogram to See the frequency of the ADI
+
+```{r}
+ggplot(Dataset_V4%>% dplyr::filter(!is.na(ADI)),
+       aes(x=ADI))+
+  geom_histogram(fill="light blue",color='black',bins=5)+
+  xlab("ADI")+
+  ylab("Count")
+#geom_histogram() ) display the counts with bars
+# 10 bins
+```
+Use boxplot to show the distribution of the ADI from the perspectives ADI80 group 1 and group 0
+
+```{r}
+ggplot(Dataset_V4,aes(x=ADI80,y=ADI, fill=ADI80))+
+  stat_boxplot(geom="errorbar")+
+  geom_boxplot(fill="light blue")+
+  ggtitle("Boxplot of ADI in the ADI80 groups")+
+  theme_bw()
+
+```
+
+Use boxplot to show the distribution of the ADI from the perspectives rank80 group 1 and group 0
+
+
+```{r}
+Dataset_V4%>%
+  
+  summarise(
+    n=n(),
+    mean=mean(ADI,na.rm=TRUE),
+    standard_deviation=sd(ADI,na.rm=TRUE),
+    median=median(ADI,na.rm=TRUE),
+    quartRange=IQR(ADI,na.rm=TRUE),
+    min=min(ADI,na.rm=TRUE),
+    max=max(ADI,na.rm=TRUE)
+)%>%
+kable(align = "ccccccccccc",caption = "ADI by Tracts Total Summary ")
+```
+```{r}
+Dataset_V4%>%
+  group_by(rank80)%>%
+  summarise(
+    n=n(),
+    mean=mean(ADI,na.rm=TRUE),
+    standard_deviation=sd(ADI,na.rm=TRUE),
+    median=median(ADI,na.rm=TRUE),
+    quartRange=IQR(ADI,na.rm=TRUE),
+    min=min(ADI,na.rm=TRUE),
+    max=max(ADI,na.rm=TRUE)
+)%>%
+kable(align = "ccccccccccc",caption = "ADI by rank80 Summary ")
+```
+
+```{r}
+Dataset_V4%>%
+  dplyr::filter(!is.na(ADI))%>%
+  group_by(ADI80)%>%
+  summarise(
+    n=n(),
+    mean=mean(ADI,na.rm=TRUE),
+    standard_deviation=sd(ADI,na.rm=TRUE),
+    median=median(ADI,na.rm=TRUE),
+    quartRange=IQR(ADI,na.rm=TRUE),
+    min=min(ADI,na.rm=TRUE),
+    max=max(ADI,na.rm=TRUE)
+)%>%
+kable(align = "ccccccccccc",caption = "ADI by ADI80 Summary ")
+```
+Extract the values of the potential outliers
+
+```{r}
+boxplot.stats(Dataset_V4$ADI)$out
+```
+There is 0 outliers.
+
+```{r}
+png("ADI scatter plot.png", width = 220, height = 190, units='mm', res = 300)
+  plot(1:10, 1:10, mar=c(3.5,0,3,0))
+p1<-ggplot(data=Dataset_V4%>% dplyr::filter(!is.na(ADI)), mapping = aes(sample = ADI)) +
+  stat_qq_band(alpha=0.5,conf=0.95,qtype = 1,bandType ="boot" ) +
+  stat_qq_line(identity = TRUE) +
+  stat_qq_point(col="Orange") +
+  ggtitle("ADI State Rank in Both Groups")
+  labs(x = "Theoretical Quantiles", y = "Sample Quantitles")+theme_bw()
+
+
+p2<-ggplot(data=Dataset_V4%>% dplyr::filter(!is.na(ADI)), mapping = aes(sample = ADI,color=rank80,fill=rank80)) +
+  stat_qq_band(alpha=0.5,conf=0.95,qtype = 1,bandType ="boot" ) +
+  stat_qq_line(identity = TRUE) +
+  stat_qq_point(col="black") +
+  facet_wrap(~rank80,scales="free")+
+  ggtitle("ADI State Rank \n in Group 0 and Group 1")+
+  labs(x = "Theoretical Quantiles", y = "Sample Quantitles")+theme_bw()
+
+ggarrange(p1, p2, 
+          labels = c("A", "B"),
+          ncol = 2, nrow = 1)
+dev.off()
+```
+
+```{r}
+ggplot(data=Dataset_V4%>% dplyr::filter(!is.na(ADI)), mapping = aes(sample = ADI,color=rank80,fill=rank80)) +
+  stat_qq_band(alpha=0.5,conf=0.95,qtype = 1,bandType ="boot" ) +
+  stat_qq_line(identity = TRUE) +
+  stat_qq_point(col="black") +
+  facet_wrap(~rank80,scales="free")+
+  labs(x = "Theoretical Quantiles", y = "Sample Quantitles")+theme_bw()
+
+```
+```{r}
+ggplot(data=Dataset_V4%>% dplyr::filter(!is.na(ADI)), mapping = aes(sample = ADI,color=ADI80,fill=ADI80)) +
+  stat_qq_band(alpha=0.5,conf=0.95,qtype = 1,bandType ="boot" ) +
+  stat_qq_line(identity = TRUE) +
+  stat_qq_point(col="black") +
+  facet_wrap(~ADI80,scales="free")+
+  labs(x = "Theoretical Quantiles", y = "Sample Quantitles")+theme_bw()
+
+```

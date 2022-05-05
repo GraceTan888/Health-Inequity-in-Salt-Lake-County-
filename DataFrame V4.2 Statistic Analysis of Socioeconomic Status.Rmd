@@ -1,0 +1,702 @@
+---
+title: "DataFrame V4.2 Statistic Analysis of Socioeconomic Status"
+date: "03/24/2022"
+output:
+  pdf_document: default
+  word_document: default
+  html_document: default
+fontsize: 12pt
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R Markdown
+
+
+```{r}
+library(readxl)
+
+library(tidyverse)
+library(tidycensus)
+library(dplyr)
+library(ggplot2)
+library(knitr)
+library(qqplotr)
+
+library(lattice)
+library(survival)
+library(Formula)
+library(Hmisc)
+
+
+library(Metrics)
+library(lmtest)
+library(fBasics)
+library(segmented)
+
+library(corrplot)
+#library(raster)
+#library(rgdal)
+#library(classInt)
+library(RColorBrewer)
+
+library(oaxaca)
+library(devtools)
+
+library(viridis)#viridisLite provides the base functions for generating the color maps in base R 
+library(GGally)
+
+library(olsrr)
+
+library(relaimpo)
+```
+
+
+## 1. Description of Dataset
+
+
+```{r}
+
+Dataset_V4<- read_excel("Dataset_V4.xlsx", 
+                         
+    col_types = c("numeric", "numeric", "numeric", 
+        "numeric", "numeric", "numeric", 
+        "numeric", "numeric", "numeric", 
+        "numeric", "numeric", "numeric", 
+        "numeric", "numeric", "numeric", 
+        "numeric", "numeric", "numeric", 
+        "numeric", "numeric", "numeric", 
+        "numeric", "numeric", "numeric", 
+        "numeric", "numeric","numeric",
+        "numeric","numeric","numeric"))
+
+Dataset_V4
+#Rows: 210 Columns: 30
+```
+```{r}
+glimpse(Dataset_V4)
+#Rows: 210 Columns: 30
+```
+```{r}
+df <- data.frame(Group=rep(c("Both Groups",  "Group 0","Group 1"), each=4),
+                dose=rep(c("Native_Born_Uninsured_Percent",  "Bachelor_or_higher_Uninsured_Percent","Worked_Full_time_Uninsured_Percent","At_or_above_400_Poverty_Uninsured_Percent"),3),
+                Uninsured_Percent=c(8.01,5.559,9.753,4.361,5.938,4.328,6.385,3.274,16.3,10.481,23.226,8.707))
+head(df)
+```
+```{r}
+png("barplot_Socioeco1.png", width = 220, height = 190, units='mm', res = 300)
+  plot(1:10, 1:10, mar=c(3.5,0,3,0))
+  
+  df<-df %>%
+  mutate(Category = fct_reorder(dose, Uninsured_Percent)) 
+   
+ ggplot2::ggplot(data=df, aes(x=Category, y=Uninsured_Percent, fill=Group)) +
+  geom_bar(stat="identity", position=position_dodge())+
+  geom_text(aes(label=Uninsured_Percent), vjust=1.6, color="black",
+            position = position_dodge(0.9), size=3.5)+
+  scale_fill_brewer(palette="Paired")+
+    coord_flip() +
+    ggtitle("The Means of Uninsured Percent in Socioeconomic Status 1  \n (Less than Average Uninsured Percents by Tracts)") + 
+  theme_minimal()
+
+
+dev.off()
+```
+```{r}
+df2 <- data.frame(Group=rep(c("Both Groups",  "Group 0","Group 1"), each=9),
+                dose=rep(c("Foreign_Born_Naturalized_Uninsured_Percent","Foreign_Born_Not_citizen_Uninsured_Percent","Less_than_high_school_graduate_Uninsured_Percent","High_school_graduate_Uninsured_Percent","Some_college_or_associate_degree_Uninsured_Percent","Worked_less_FullTime_Uninsured_Percent","Did_not_work_Uninsured_Percent","Below_138_poverty_Uninsured_Percent","From_138_to_399_poverty_Uninsured_Percent"),3),
+                Uninsured_Percent=c(10.691,30.173,24.298,14.11,9.127,17.469,17.96,20.34,11.301,9.068,23.853,19.421,11.138,7.066,13.221,14.214,17.036,8.367,17.183,55.455,43.805,25.998,17.371,34.457,32.945,33.557,23.040))
+head(df2)
+```
+```{r}
+png("barplot_Socioeco2.png", width = 220, height = 190, units='mm', res = 300)
+  plot(1:10, 1:10, mar=c(3.5,0,3,0))
+  
+  df2<-df2 %>%
+  mutate(Category = fct_reorder(dose, Uninsured_Percent)) 
+   
+ ggplot2::ggplot(data=df2, aes(x=Category, y=Uninsured_Percent, fill=Group)) +
+  geom_bar(stat="identity", position=position_dodge())+
+  geom_text(aes(label=Uninsured_Percent), vjust=1.6, color="black",
+            position = position_dodge(0.9), size=3.5)+
+  scale_fill_brewer(palette="Paired")+
+    coord_flip() +
+    ggtitle("The Means of Uninsured Percent in Socioeconomic Status 2  \n (More than Average Uninsured Percents by Tracts)") + 
+  theme_minimal()
+
+
+dev.off()
+```
+
+
+## 2. Correlation Analysis 
+
+
+```{r}
+
+cordata<-Dataset_V4%>%
+  dplyr::select(c(
+                  Native_Born_Uninsured_Percent,
+                  Foreign_Born_Naturalized_Uninsured_Percent,
+                  Foreign_Born_Not_citizen_Uninsured_Percent,
+                  Less_than_high_school_graduate_Uninsured_Percent,
+                  High_school_graduate_Uninsured_Percent,
+                  Some_college_or_associate_degree_Uninsured_Percent,
+                  Bachelor_or_higher_Uninsured_Percent,
+                  Worked_Full_time_Uninsured_Percent,
+                  Worked_less_FullTime_Uninsured_Percent,
+                  Did_not_work_Uninsured_Percent,
+                  Below_138_poverty_Uninsured_Percent, 
+                  From_138_to_399_poverty_Uninsured_Percent,                           At_or_above_400_Poverty_Uninsured_Percent))
+cordata
+
+#210*13
+
+```
+
+
+```{r}
+res <- rcorr(as.matrix(cordata))
+view(res)
+```
+
+Extract the correlation coefficients
+```{r}
+Corr__Coefficients_Socioeconomic<- res$r
+view(Corr__Coefficients_Socioeconomic)
+write.csv(Corr__Coefficients_Socioeconomic, 'Corr__Coefficients_Socioeconomic.csv', row.names = FALSE)
+```
+
+I've found some Correlation coefficient are higher than 0.85.I will do further analysis.
+
+Correlation coefficient of Native_Born_Uninsured_Percent and From_138_to_399_poverty_Uninsured_Percent is 0.86.
+
+Correlation coefficient of From_138_to_399_poverty_Uninsured_Percent and Worked_Full_time_Uninsured_Percent is 0.86.
+
+Correlation coefficient of Native_Born_Uninsured_Percent and Worked_Full_time_Uninsured_Percent is 0.88. 
+
+
+
+```{r}
+png("Corr_Coefficients_Socioeconomic.png", width = 220, height = 190, units='mm', res = 300)
+  plot(1:10, 1:10, mar=c(3.5,0,3,0))
+M <- cor(cordata)
+corrplot(M, type = "upper", tl.pos = "td",
+         method = "circle", tl.cex = 0.5, tl.col = 'black',
+         order = "hclust", col=brewer.pal(n=8, name="RdYlBu"),diag = FALSE)
+#ggsave("test.tiff", units="in", width=5, height=4, dpi=300, compression = 'lzw')
+dev.off()
+
+```
+
+
+## 3. Regression Analysis
+
+### 3.1 Socioeconomic Status Linear model using original dataset for both groups of rank80
+```{r}
+Socioeconomic__lmModel <- lm(Total_Uninsured_Percent~Native_Born_Uninsured_Percent+
+                  Foreign_Born_Naturalized_Uninsured_Percent+
+                  Foreign_Born_Not_citizen_Uninsured_Percent+
+                  Less_than_high_school_graduate_Uninsured_Percent+
+                  High_school_graduate_Uninsured_Percent+
+                  Some_college_or_associate_degree_Uninsured_Percent+
+                  Bachelor_or_higher_Uninsured_Percent+
+                  Worked_Full_time_Uninsured_Percent+
+                  Worked_less_FullTime_Uninsured_Percent+
+                  Did_not_work_Uninsured_Percent+
+                  Below_138_poverty_Uninsured_Percent+ 
+                  From_138_to_399_poverty_Uninsured_Percent+                            At_or_above_400_Poverty_Uninsured_Percent, data=Dataset_V4)
+summary(Socioeconomic__lmModel)
+```
+1. F-statistic: p-value: < 2.2e-16. The regression model fits the data better than the model with no independent variables.
+
+
+2. Adjusted R-squared:  0.9803    Goodness-of-fit measure
+
+3. Coefficients p-value. Some of the coefficients has effects on y.
+
+Native_Born_Uninsured_Percent                       < 2e-16 ***
+Foreign_Born_Naturalized_Uninsured_Percent         0.278555    
+Foreign_Born_Not_citizen_Uninsured_Percent         9.05e-07 ***
+Less_than_high_school_graduate_Uninsured_Percent   0.721951    
+High_school_graduate_Uninsured_Percent             0.183917    
+Some_college_or_associate_degree_Uninsured_Percent 0.334808    
+Bachelor_or_higher_Uninsured_Percent               0.000211 ***
+Worked_Full_time_Uninsured_Percent                  < 2e-16 ***
+Worked_less_FullTime_Uninsured_Percent             1.41e-13 ***
+Did_not_work_Uninsured_Percent                     9.29e-10 ***
+Below_138_poverty_Uninsured_Percent                0.026713 *  
+From_138_to_399_poverty_Uninsured_Percent          0.131969    
+At_or_above_400_Poverty_Uninsured_Percent          0.833373  
+---
+Signif. codes:  0 ‘***’ 0.001 ‘**’ 0.01 ‘*’ 0.05 ‘.’ 0.1 ‘ ’ 1  
+
+```{r}
+step(Socioeconomic__lmModel)
+```
+
+```{r}
+Socioeconomic__lmModel_step <- lm(Total_Uninsured_Percent ~ Native_Born_Uninsured_Percent + 
+    Foreign_Born_Not_citizen_Uninsured_Percent + Bachelor_or_higher_Uninsured_Percent + 
+    Worked_Full_time_Uninsured_Percent + Worked_less_FullTime_Uninsured_Percent + 
+    Did_not_work_Uninsured_Percent + Below_138_poverty_Uninsured_Percent + 
+    From_138_to_399_poverty_Uninsured_Percent, data=Dataset_V4)
+summary(Socioeconomic__lmModel_step)
+```
+```{r}
+cordata<-Dataset_V4%>%
+  dplyr::select(c(
+                  Native_Born_Uninsured_Percent,
+    Foreign_Born_Not_citizen_Uninsured_Percent, Bachelor_or_higher_Uninsured_Percent,
+    Worked_Full_time_Uninsured_Percent, Worked_less_FullTime_Uninsured_Percent,
+    Did_not_work_Uninsured_Percent, Below_138_poverty_Uninsured_Percent, 
+    From_138_to_399_poverty_Uninsured_Percent))
+cordata
+#210*11
+```
+
+```{r}
+res <- rcorr(as.matrix(cordata))
+view(res)
+```
+
+Extract the correlation coefficients
+```{r}
+Corr__Coefficients_Socioeconomic<- res$r
+view(Corr__Coefficients_Socioeconomic)
+write.csv(Corr__Coefficients_Socioeconomic, 'Corr__Coefficients_Socioeconomic2.csv', row.names = FALSE)
+```
+I've found some Correlation coefficient are higher than 0.85.I will do further analysis.
+
+Correlation coefficient of Native_Born_Uninsured_Percent and From_138_to_399_poverty_Uninsured_Percent is 0.86.
+
+Correlation coefficient of From_138_to_399_poverty_Uninsured_Percent and Worked_Full_time_Uninsured_Percent is 0.86.
+
+Correlation coefficient of Native_Born_Uninsured_Percent and Worked_Full_time_Uninsured_Percent is 0.88. 
+```{r}
+highcor_data<-Dataset_V4%>%
+  dplyr::select(c(
+                  Native_Born_Uninsured_Percent,
+                  Worked_Full_time_Uninsured_Percent,
+                  From_138_to_399_poverty_Uninsured_Percent,                           ))
+highcor_data
+```
+```{r}
+highcor_res <- rcorr(as.matrix(highcor_data))
+view(highcor_res)
+```
+
+
+```{r}
+ggpairs(highcor_data, title="High Correlation Coefficients in Socioeconomic Status:
+uninsured percent of native born
+uninsured percent of worked full-time
+uninsured percent of 138 to 399 percent of the poverty threshold 
+") 
+```
+
+```{r}
+metrics <- calc.relimp(Socioeconomic__lmModel, type = c("lmg"), rela= TRUE)
+metrics
+```
+
+```{r}
+Dataset_V4<-Dataset_V4%>%
+  dplyr::mutate(NativeBorn_WorkedFulltime_From138to399poverty_MultiFactor = 0.39260654350624* Native_Born_Uninsured_Percent
++0.337105999014764* Worked_Full_time_Uninsured_Percent 
++0.270287457478996*From_138_to_399_poverty_Uninsured_Percent)
+Dataset_V4 <-Dataset_V4 %>% relocate(NativeBorn_WorkedFulltime_From138to399poverty_MultiFactor, .after = At_or_above_400_Poverty_Uninsured_Percent)
+write.csv(Dataset_V4, 'Dataset V4 Socioeconomic Multifactor.csv', row.names = FALSE)
+Dataset_V4
+```
+### 3.2 Check Correlation coeffients after using step() and lmg
+
+```{r}
+cordata_multifactor<-Dataset_V4%>%
+  dplyr::select(c(
+                  NativeBorn_WorkedFulltime_From138to399poverty_MultiFactor,
+                  
+                  Foreign_Born_Not_citizen_Uninsured_Percent,
+                  
+                  Bachelor_or_higher_Uninsured_Percent,
+                  Worked_less_FullTime_Uninsured_Percent,
+                  Did_not_work_Uninsured_Percent,
+                  Below_138_poverty_Uninsured_Percent))
+cordata_multifactor
+#210*6
+```
+
+```{r}
+MultiFactor_res <- rcorr(as.matrix(cordata_multifactor))
+view(MultiFactor_res)
+```
+
+Extract the correlation coefficients
+```{r}
+Corr__Coefficients_Socioeconomic_MultiFactor<- MultiFactor_res$r
+view(Corr__Coefficients_Socioeconomic_MultiFactor)
+write.csv(Corr__Coefficients_Socioeconomic_MultiFactor, 'Corr__Coefficients_Socioeconomic_MultiFactor.csv', row.names = FALSE)
+```
+
+
+```{r}
+png("Corr__Coefficients_Socioeconomic_MultiFactor.png", width = 220, height = 190, units='mm', res = 300)
+  plot(1:10, 1:10, mar=c(3.5,0,3,0))
+M <- cor(Corr__Coefficients_Socioeconomic_MultiFactor)
+corrplot(M, type = "upper", tl.pos = "td",
+         method = "circle", tl.cex = 0.5, tl.col = 'black',
+         order = "hclust", col=brewer.pal(n=8, name="RdYlBu"),diag = FALSE)
+#ggsave("test.tiff", units="in", width=5, height=4, dpi=300, compression = 'lzw')
+dev.off()
+
+```
+
+### 3.3 Socioeconomic Status Linear model using Box-Cox Transformation
+```{r}
+Socioeconomic_Multifactor__lmModel <- lm(Total_Uninsured_Percent~NativeBorn_WorkedFulltime_From138to399poverty_MultiFactor+
+                  
+                  Foreign_Born_Not_citizen_Uninsured_Percent+
+                  
+                  Bachelor_or_higher_Uninsured_Percent+
+                  Worked_less_FullTime_Uninsured_Percent+
+                  Did_not_work_Uninsured_Percent+
+                  Below_138_poverty_Uninsured_Percent, data=Dataset_V4)
+summary(Socioeconomic_Multifactor__lmModel)
+```
+```{r}
+bptest(Socioeconomic_Multifactor__lmModel)
+```
+Box-Cox Transformation
+
+```{r}
+bc=boxcox(Socioeconomic_Multifactor__lmModel)
+#extract best lambda
+best.lam=bc$x[which(bc$y==max(bc$y))]
+best.lam
+```
+
+Best lambda=0.7878788 
+We will transform Y with best lambda
+"Linear Model With R" p134
+```{r}
+Dataset_V4<-Dataset_V4%>%
+  dplyr::mutate(bestLambda_socioeco_Total_Uninsured_Percent= (Total_Uninsured_Percent^0.7878788-1)/0.7878788)
+Dataset_V4 <-Dataset_V4 %>% relocate(bestLambda_socioeco_Total_Uninsured_Percent, .after = Total_Uninsured_Percent)
+Dataset_V4
+write.csv(Dataset_V4, 'Dataset_V4_BestLambda_socioeco.csv', row.names = FALSE)
+
+```
+
+```{r}
+Socioeconomic_Multifactor__lmModel_update <- lm(bestLambda_socioeco_Total_Uninsured_Percent
+~NativeBorn_WorkedFulltime_From138to399poverty_MultiFactor+
+                  
+                  Foreign_Born_Not_citizen_Uninsured_Percent+
+                  
+                  Bachelor_or_higher_Uninsured_Percent+
+                  Worked_less_FullTime_Uninsured_Percent+
+                  Did_not_work_Uninsured_Percent+
+                  Below_138_poverty_Uninsured_Percent, data=Dataset_V4)
+summary(Socioeconomic_Multifactor__lmModel_update)
+```
+
+
+
+```{r}
+group0_data<-Dataset_V4%>%
+  dplyr::filter(rank80 ==0) 
+group0_data
+
+```
+
+```{r}
+Socioeconomic0_Multifactor__lmModel_update <- lm(bestLambda_socioeco_Total_Uninsured_Percent
+~NativeBorn_WorkedFulltime_From138to399poverty_MultiFactor+
+                  
+                  Foreign_Born_Not_citizen_Uninsured_Percent+
+                  
+                  Bachelor_or_higher_Uninsured_Percent+
+                  Worked_less_FullTime_Uninsured_Percent+
+                  Did_not_work_Uninsured_Percent+
+                  Below_138_poverty_Uninsured_Percent,
+                 data=group0_data)
+summary(Socioeconomic0_Multifactor__lmModel_update)
+
+
+```
+
+
+```{r}
+
+group1_data<-Dataset_V4%>%
+  dplyr::filter(rank80 ==1) 
+group1_data
+
+```
+
+
+```{r}
+Socioeconomic1_Multifactor__lmModel_update <- lm(bestLambda_socioeco_Total_Uninsured_Percent
+~NativeBorn_WorkedFulltime_From138to399poverty_MultiFactor+
+                  
+                  Foreign_Born_Not_citizen_Uninsured_Percent+
+                  
+                  Bachelor_or_higher_Uninsured_Percent+
+                  Worked_less_FullTime_Uninsured_Percent+
+                  Did_not_work_Uninsured_Percent+
+                  Below_138_poverty_Uninsured_Percent,
+                 data=group1_data)
+summary(Socioeconomic1_Multifactor__lmModel_update)
+
+
+```
+
+### 3.4 Regression diagnosis 
+
+a. Residuals are normally distributed.
+
+b. Residuals are independent.
+
+c. The mean of the residuals is zero and sum of the residuals is zero.
+
+d. Residuals has constant variance.
+
+a. Residuals are normally distributed.
+```{r}
+jarqueberaTest(Socioeconomic_Multifactor__lmModel_update$resid)
+```
+Null Hypothesis: Skewness and Kurtosis are equal to zero(normal distribution).  p <= 0.01  : very strong presumption against null hypothesis. It is normally distributed
+
+```{r}
+plot(Socioeconomic_Multifactor__lmModel_update)
+```
+
+```{r}
+ols_plot_resid_hist(Socioeconomic_Multifactor__lmModel_update)
+```
+
+
+```{r}
+jarqueberaTest(Socioeconomic0_Multifactor__lmModel_update$resid)
+```
+Null Hypothesis: Skewness and Kurtosis are equal to zero(normal distribution).  p <= 0.01  : very strong presumption against null hypothesis. It is not normally distributed
+
+```{r}
+ols_plot_resid_hist(Socioeconomic0_Multifactor__lmModel_update)
+```
+Socioeconomic0__lmModel__update uses a large sample (size 168 which are bigger than 30), and the histogram of residuals is similar to normal distribution. According to Law of Large Numbers and Central Limit Theorem, we can accept the normality of residuals although the residuals are not normally distributed using Jarque - Bera Normalality Test.
+
+```{r}
+jarqueberaTest(Socioeconomic1_Multifactor__lmModel_update$resid)
+```
+Null Hypothesis: Skewness and Kurtosis are equal to zero(normal distribution).  p > 0.01  : very strong presumption against null hypothesis. It is normally distributed
+
+
+
+b. Check if residuals are independent.
+```{r}
+dwtest(Socioeconomic_Multifactor__lmModel_update)
+```
+
+The Durbin Watson statistic tests the hypothesis that there is no autocorrelation. If there is no autocorrelation (where subsequent observations are related), the Durbin-Watson statistic should be between 1.5 and 2.5 and the p-value will be above 0.05.
+DW = 1.6377 (1.5<1.6377<2.5), p-value =  0.003135(0.03101<0.05). 
+
+```{r}
+dwtest(Socioeconomic0_Multifactor__lmModel_update)
+```
+Residuals of Socioeconomic0__lmModel__update are independent.
+The Durbin Watson statistic tests the hypothesis that there is no autocorrelation. If there is no autocorrelation (where subsequent observations are related), the Durbin-Watson statistic should be between 1.5 and 2.5 and the p-value will be above 0.05.
+DW = 1.6456 (1.5<1.6456<2.5), p-value =  0.008776(0.008776<0.05). 
+
+```{r}
+dwtest(Socioeconomic1_Multifactor__lmModel_update)
+```
+Residuals of Socioeconomic1__lmModel__update are independent.
+
+
+c. The mean of the residuals is zero and sum of the residuals is zero.
+
+```{r}
+sum(Socioeconomic_Multifactor__lmModel_update$residuals)
+```
+```{r}
+mean(Socioeconomic_Multifactor__lmModel_update$residuals)
+```
+The mean of the erros is zero and sum of the errors close to zero.
+
+```{r}
+sum(Socioeconomic0_Multifactor__lmModel_update$residuals)
+```
+```{r}
+mean(Socioeconomic0_Multifactor__lmModel_update$residuals)
+```
+```{r}
+sum(Socioeconomic1_Multifactor__lmModel_update$residuals)
+```
+```{r}
+mean(Socioeconomic1_Multifactor__lmModel_update$residuals)
+```
+
+
+d.Check if residuals has constant variance.
+
+
+```{r}
+bptest(Socioeconomic_Multifactor__lmModel_update)
+```
+
+```{r}
+bptest(Socioeconomic_Multifactor__lmModel)
+```
+
+
+
+```{r}
+bptest(Socioeconomic0_Multifactor__lmModel_update)
+```
+
+```{r}
+bptest(Socioeconomic1_Multifactor__lmModel_update)
+```
+
+
+
+
+
+## 4. Oaxaca decomposition 
+```{r}
+oaxaca_Socioeconomic_results <- oaxaca(formula = bestLambda_socioeco_Total_Uninsured_Percent
+~NativeBorn_WorkedFulltime_From138to399poverty_MultiFactor+
+                  
+                  Foreign_Born_Not_citizen_Uninsured_Percent+
+                  
+                  Bachelor_or_higher_Uninsured_Percent+
+                  Worked_less_FullTime_Uninsured_Percent+
+                  Did_not_work_Uninsured_Percent+
+                  Below_138_poverty_Uninsured_Percent|rank80, data = Dataset_V4)
+names(summary(oaxaca_Socioeconomic_results))
+summary(oaxaca_Socioeconomic_results)
+
+```
+```{r}
+oaxaca_Socioeconomic_results$n
+```
+```{r}
+oaxaca_Socioeconomic_results$y
+```
+
+
+
+### 4.1 Threefold decomposition
+```{r}
+oaxaca_Socioeconomic_results$threefold$overall
+```
+```{r}
+png("Threefold Socioeconomic Status.png", width = 220, height = 190, units='mm', res = 300)
+  plot(1:10, 1:10, mar=c(3.5,0,3,0))
+plot(oaxaca_Socioeconomic_results, components = c("endowments","coefficients")) +
+  labs(
+    title = "Socioeconomic Status Oaxaca Decomposition "
+    )
+dev.off()
+```
+
+```{r}
+oaxaca_Socioeconomic_results$beta$beta.diff["NativeBorn_WorkedFulltime_From138to399poverty_MultiFactor"]
+```
+
+
+
+
+
+
+
+### 4.2 Twofold decomposition
+```{r}
+oaxaca_Socioeconomic_results$twofold$overall
+```
+
+```{r}
+png("Twofold Socioeconomic Status3.png", width = 220, height = 190, units='mm', res = 300)
+  plot(1:10, 1:10, mar=c(3.5,0,3,0))
+plot(oaxaca_Socioeconomic_results, decomposition = "twofold", group.weight = -1)
+dev.off()
+```
+```{r}
+
+plot(oaxaca_Socioeconomic_results, decomposition = "twofold", group.weight = -1,
+unexplained.split = TRUE, components = c("unexplained A",
+"unexplained B"), component.labels = c("unexplained A" =
+"In Favor of Safe Group", "unexplained B" = "Against the Risk Group"),
+variables = c(
+  "NativeBorn_WorkedFulltime_From138to399poverty_MultiFactor",
+                  
+                  "Foreign_Born_Not_citizen_Uninsured_Percent",
+                  
+                  "Bachelor_or_higher_Uninsured_Percent",
+                  "Worked_less_FullTime_Uninsured_Percent",
+                  "Did_not_work_Uninsured_Percent",
+                  "Below_138_poverty_Uninsured_Percent"), variable.labels = c(
+  "NativeBorn_WorkedFulltime_From138to399poverty_MultiFactor"="Multifactor of NativeBorn WorkedFulltime From138to399poverty",
+  "Foreign_Born_Not_citizen_Uninsured_Percent" = "Uninsured percent of Foreign-Born Not Citizen",
+  "Bachelor_or_higher_Uninsured_Percent"="Uninsured percent of Bachelor or higher",
+  "Worked_less_FullTime_Uninsured_Percent"="Uninsured percent of Worked less than full time",
+  "Did_not_work_Uninsured_Percent"="Uninsured percent of did not work",
+  "Below_138_poverty_Uninsured_Percent"="Uninsured percent of below 138 poverty"
+  
+  ))
+```
+
+```{r}
+png("Twofold Socioeconomic Status_1.png", width = 220, height = 190, units='mm', res = 300)
+  plot(1:10, 1:10, mar=c(3.5,0,3,0))
+plot(oaxaca_Socioeconomic_results, decomposition = "twofold", group.weight = -1,
+unexplained.split = TRUE, components = c("unexplained A",
+"unexplained B"), component.labels = c("unexplained A" =
+ "In Favor of Safe Group", "unexplained B" = "Against the Risk Group"),
+component.left = TRUE, variables = c( "NativeBorn_WorkedFulltime_From138to399poverty_MultiFactor",
+  "Foreign_Born_Not_citizen_Uninsured_Percent",
+  "Bachelor_or_higher_Uninsured_Percent",
+  "Worked_less_FullTime_Uninsured_Percent",
+  "Did_not_work_Uninsured_Percent",
+  "Below_138_poverty_Uninsured_Percent"),
+variable.labels = c(  "NativeBorn_WorkedFulltime_From138to399poverty_MultiFactor"="Multifactor of NativeBorn WorkedFulltime From138to399poverty",
+  "Foreign_Born_Not_citizen_Uninsured_Percent" = "Uninsured percent of Foreign-Born Not Citizen",
+  "Bachelor_or_higher_Uninsured_Percent"="Uninsured percent of Bachelor or higher",
+  "Worked_less_FullTime_Uninsured_Percent"="Uninsured percent of Worked less than full time",
+  "Did_not_work_Uninsured_Percent"="Uninsured percent of did not work",
+  "Below_138_poverty_Uninsured_Percent"="Uninsured percent of below 138 poverty"
+  ))
+dev.off()
+```
+
+
+
+```{r}
+variables <- c(
+  "NativeBorn_WorkedFulltime_From138to399poverty_MultiFactor",
+  "Foreign_Born_Not_citizen_Uninsured_Percent",
+  "Bachelor_or_higher_Uninsured_Percent",
+  "Worked_less_FullTime_Uninsured_Percent",
+  "Did_not_work_Uninsured_Percent",
+  "Below_138_poverty_Uninsured_Percent")
+```
+
+```{r}
+columns <- c("group.weight", "coef(unexplained A)", "coef(unexplained B)")
+```
+
+```{r}
+view(oaxaca_Socioeconomic_results$twofold$variables[[5]][variables, columns])
+```
+
+
+
+
+
+
+
+
+
